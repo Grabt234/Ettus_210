@@ -9,11 +9,18 @@
 #include <boost/thread.hpp>
 #include <iostream>
 
+//this loop catches all errors
 int UHD_SAFE_MAIN(int argc, char *argv[]) {
+
+    //sets scheduling priority to current thread
+    //this process is prioritized over others
     uhd::set_thread_priority_safe();
 
+    //this is the standard ip of a N210
     std::string device_args("addr=192.168.10.2");
+    //ettus N210 only has a single slot - dont worry about this
     std::string subdev("A:0");
+    //This is the abstracted name of the antenna -> what we call it
     std::string ant("TX/RX");
     std::string ref("internal");
 
