@@ -18,9 +18,11 @@
 
 
 
-using namespace std;
+namespace po = boost::program_options;
 
 int main()
 {
-    cout << "Hello World" << endl;
+    uhd::set_thread_priority_safe();
+ 
+    return 0;
 }
