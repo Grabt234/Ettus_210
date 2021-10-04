@@ -21,7 +21,7 @@
 // Configures variables that can be set for program and their defaults
 namespace po = boost::program_options;
 
-int main()
+int main(int argc, char* argv[])
 {
     uhd::set_thread_priority_safe();
 
@@ -54,6 +54,12 @@ int main()
 		("print", po::value<std::string>(&print_time)->default_value("N"), "y/N")
         ("setup", po::value<double>(&setup_time)->default_value(1.0), "seconds of setup time")
     ;
+
+    //storing manual inputs
+    po::variables_map vm;
+    po::store(po::parse_command_line(argc, argv, desc), vm);
+    po::notify(vm);
+
 
     return 0;
 }

@@ -1,0 +1,40 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/grant/EttusN210/Code/Ettus_210/ettus_record.cpp
+iostream
+-
+vector
+-
+complex
+-
+thread
+-
+fstream
+-
+csignal
+-
+chrono
+-
+ctime
+-
+boost/program_options.hpp
+-
+boost/format.hpp
+-
+uhd/usrp/multi_usrp.hpp
+-
+uhd/exception.hpp
+-
+uhd/types/tune_request.hpp
+-
+uhd/types/device_addr.hpp
+-
+uhd/utils/thread.hpp
+-
+
