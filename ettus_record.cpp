@@ -50,8 +50,8 @@ int main(int argc, char* argv[])
         ("rx-rate", po::value<double>(&rx_rate), "rate of receive incoming samples")
         ("tx-freq", po::value<double>(&tx_freq), "transmit RF center frequency in Hz")
         ("rx-freq", po::value<double>(&rx_freq), "receive RF center frequency in Hz")
-        ("tx-gain", po::value<double>(&tx_gain), "gain for the transmit RF chain")
-        ("rx-gain", po::value<double>(&rx_gain), "gain for the receive RF chain")
+        ("tx-gain", po::value<double>(&tx_gain)->default_value(0), "gain for the transmit RF chain")
+        ("rx-gain", po::value<double>(&rx_gain)->default_value(0), "gain for the receive RF chain")
         ("tx-bw", po::value<double>(&tx_bw)->default_value(0.0), "analog frontend filter bandwidth in Hz")
         ("rx-bw", po::value<double>(&rx_bw)->default_value(0.0), "analog frontend filter bandwidth in Hz")
         ("pps", po::value<std::string>(&pps)->default_value("internal"), "pps source (gpsdo, internal, external)")
@@ -104,8 +104,6 @@ int main(int argc, char* argv[])
     std::cout << boost::format("Using Device: %s \n") % usrp->get_pp_string()
               << std::endl;
 
-
-
     // set the transmit sample rate
     if (not vm.count("tx-rate")) { //count instances of flag
         std::cerr << "Please specify the transmit sample rate with --tx-rate"
@@ -120,7 +118,6 @@ int main(int argc, char* argv[])
               << std::endl
               << std::endl;
 
-
     // set the receive sample rate
     if (not vm.count("rx-rate")) { //count instances of flag
         std::cerr << "Please specify the sample rate with --rx-rate" << std::endl;
@@ -134,17 +131,14 @@ int main(int argc, char* argv[])
               << std::endl
               << std::endl;
 
-
     // set the transmit center frequency
     if (not vm.count("tx-freq")) { //count instances of flag
         std::cerr << "Please specify the transmit center frequency with --tx-freq"
                   << std::endl;
         return ~0;
     }
-    //Note 1 channel transmission is hardcoded
+    //Note 0 channel transmission is hardcoded
     size_t channel = 0;
-    
-    
     uhd::tune_request_t tx_tune_request(tx_freq);
     if (vm.count("tx-int-n"))
         tx_tune_request.args = uhd::device_addr_t("mode_n=integer");
@@ -157,5 +151,66 @@ int main(int argc, char* argv[])
                 << std::endl
                 << std::endl;
     
+    // set the rf gain
+    if (vm.count("tx-gain")) {
+        std::cout << boost::format("Setting TX Gain: %f dB...") % tx_gain
+                    << std::endl;
+        usrp->set_tx_gain(tx_gain, channel);
+        std::cout << boost::format("Actual TX Gain: %f dB...")
+                            % usrp->get_tx_gain(channel)
+                    << std::endl
+                    << std::endl;
+    }
+
+    // set the analog frontend filter bandwidth
+    if (vm.count("tx-bw")) {
+        std::cout << boost::format("Setting TX Bandwidth: %f MHz...") % tx_bw
+                    << std::endl;
+        usrp->set_tx_bandwidth(tx_bw, channel);
+        std::cout << boost::format("Actual TX Bandwidth: %f MHz...")
+                            % usrp->get_tx_bandwidth(channel)
+                    << std::endl
+                    << std::endl;
+    }
+
+    // set the antenna
+    usrp->set_tx_antenna("TX/RX", channel);
+
+    std::cout << boost::format("Setting RX Freq: %f MHz...") % (rx_freq / 1e6)
+                  << std::endl;
+    uhd::tune_request_t rx_tune_request(rx_freq);
+    if (vm.count("rx-int-n"))
+        rx_tune_request.args = uhd::device_addr_t("mode_n=integer");
+    usrp->set_rx_freq(rx_tune_request, channel);
+    std::cout << boost::format("Actual RX Freq: %f MHz...")
+                        % (usrp->get_rx_freq(channel) / 1e6)
+                << std::endl
+                << std::endl;
+    
+    // set the receive rf gain
+    if (vm.count("rx-gain")) {
+        std::cout << boost::format("Setting RX Gain: %f dB...") % rx_gain
+                    << std::endl;
+        usrp->set_rx_gain(rx_gain, channel);
+        std::cout << boost::format("Actual RX Gain: %f dB...")
+                            % usrp->get_rx_gain(channel)
+                    << std::endl
+                    << std::endl;
+    }
+
+    // set the receive analog frontend filter bandwidth
+    std::cout << boost::format("Setting RX Bandwidth: %f MHz...") % (rx_bw / 1e6)
+                << std::endl;
+    usrp->set_rx_bandwidth(rx_bw, channel);
+    std::cout << boost::format("Actual RX Bandwidth: %f MHz...")
+                        % (usrp->get_rx_bandwidth(channel) / 1e6)
+                << std::endl
+                << std::endl;
+
+
+    // set the receive antenna
+    usrp->set_rx_antenna("RX2", channel);
+    
+
     return 0;
 }
