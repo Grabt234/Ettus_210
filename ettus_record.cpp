@@ -41,7 +41,7 @@ int main(int argc, char* argv[])
     po::options_description desc("Allowed options");
     desc.add_options()
         ("help", "help message")
-        ("dev", po::value<std::string>(&devAddress)->default_value("addr0=192.168.10.2"), "single uhd device address args (dev=addr0=192.168.40.2, addr1=192.168.50.2)")
+        ("dev", po::value<std::string>(&devAddress)->default_value("addr0=192.168.10.2"), "single uhd device address args (dev=addr0=192.168.10.2")
         ("file", po::value<std::string>(&file)->default_value("usrp_samples.bin"), "name of the file to write binary samples to")
         ("nsamps", po::value<size_t>(&total_num_samps), "total number of samples to receive")
         ("duration", po::value<double>(&total_time)->default_value(0), "total number of seconds to receive")
@@ -60,7 +60,7 @@ int main(int argc, char* argv[])
         ("setup", po::value<double>(&setup_time)->default_value(1.0), "seconds of setup time")
     ;
 
-    //storing manual inputs
+    // clang-format on
     po::variables_map vm;
     po::store(po::parse_command_line(argc, argv, desc), vm);
     po::notify(vm);
@@ -72,6 +72,22 @@ int main(int argc, char* argv[])
         return ~0;
     }
 
-    //git commit -m "changed to independant rx,tx freq,rate, gain"
+    // create a usrp device
+    // single board, 2 slots on this board A:0, A:1
+    //printing IP which device is recorded as using
+    std::cout << boost::format("Creating the TxRx usrp device with: %s...") % devAddress
+              << std::endl;
+    uhd::usrp::multi_usrp::sptr usrp = uhd::usrp::multi_usrp::make(devAddress);
+    std::cout << std::endl;
+    // setting rx and tx subdevice
+ 
+    usrp->set_tx_subdev_spec(uhd::usrp::subdev_spec_t("A:0"), 0);
+    usrp->set_rx_subdev_spec(uhd::usrp::subdev_spec_t("A:0"), 0);
+    usrp->set_rx_antenna ("RX2",0);
+    usrp->set_tx_antenna ("TX/RX",0);
+    
+    
+    std::cout << boost::format("Tx: %s") % usrp->get_tx_antenna() << std::endl;
+    std::cout << boost::format("Rx: %s") % usrp->get_rx_antenna() << std::endl;
     return 0;
 }
