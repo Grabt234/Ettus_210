@@ -50,8 +50,8 @@ int main(int argc, char* argv[])
         ("rx-rate", po::value<double>(&rx_rate), "rate of receive incoming samples")
         ("tx-freq", po::value<double>(&tx_freq), "transmit RF center frequency in Hz")
         ("rx-freq", po::value<double>(&rx_freq), "receive RF center frequency in Hz")
-        ("tx-gain", po::value<double>(&tx_gain)->default_value(0), "gain for the transmit RF chain")
-        ("rx-gain", po::value<double>(&rx_gain)->default_value(0), "gain for the receive RF chain")
+        ("tx-gain", po::value<double>(&tx_gain), "gain for the transmit RF chain")
+        ("rx-gain", po::value<double>(&rx_gain), "gain for the receive RF chain")
         ("tx-bw", po::value<double>(&tx_bw)->default_value(0.0), "analog frontend filter bandwidth in Hz")
         ("rx-bw", po::value<double>(&rx_bw)->default_value(0.0), "analog frontend filter bandwidth in Hz")
         ("pps", po::value<std::string>(&pps)->default_value("internal"), "pps source (gpsdo, internal, external)")
@@ -73,7 +73,7 @@ int main(int argc, char* argv[])
     }
 
     // create a usrp device
-    // single board, 2 slots on this board A:0, A:1
+    // single board, 2 slots on ettusN210
     //printing IP which device is recorded as using
     std::cout << boost::format("Creating the TxRx usrp device with: %s...") % devAddress
               << std::endl;
@@ -86,8 +86,76 @@ int main(int argc, char* argv[])
     usrp->set_rx_antenna ("RX2",0);
     usrp->set_tx_antenna ("TX/RX",0);
     
-    
+    //printing to confirm ports set
     std::cout << boost::format("Tx: %s") % usrp->get_tx_antenna() << std::endl;
     std::cout << boost::format("Rx: %s") % usrp->get_rx_antenna() << std::endl;
+    
+
+
+    // Lock mboard clocks 
+    if (vm.count("ref")) {
+        usrp->set_clock_source(ref);
+    }
+
+    //printing clock for mBoard 0
+    std::cout << boost::format("Clock: %s \n") % usrp->get_clock_source(0) << std::endl;
+
+    //printing device hardware info
+    std::cout << boost::format("Using Device: %s \n") % usrp->get_pp_string()
+              << std::endl;
+
+
+
+    // set the transmit sample rate
+    if (not vm.count("tx-rate")) { //count instances of flag
+        std::cerr << "Please specify the transmit sample rate with --tx-rate"
+                  << std::endl;
+        return ~0;
+    }
+    std::cout << boost::format("Setting TX Rate: %f Msps...") % (tx_rate / 1e6)
+              << std::endl;
+    usrp->set_tx_rate(tx_rate);
+    std::cout << boost::format("Actual TX Rate: %f Msps...")
+                     % (usrp->get_tx_rate() / 1e6)
+              << std::endl
+              << std::endl;
+
+
+    // set the receive sample rate
+    if (not vm.count("rx-rate")) { //count instances of flag
+        std::cerr << "Please specify the sample rate with --rx-rate" << std::endl;
+        return ~0;
+    }
+    std::cout << boost::format("Setting RX Rate: %f Msps...") % (rx_rate / 1e6)
+              << std::endl;
+    usrp->set_rx_rate(rx_rate);
+    std::cout << boost::format("Actual RX Rate: %f Msps...")
+                     % (usrp->get_rx_rate() / 1e6)
+              << std::endl
+              << std::endl;
+
+
+    // set the transmit center frequency
+    if (not vm.count("tx-freq")) { //count instances of flag
+        std::cerr << "Please specify the transmit center frequency with --tx-freq"
+                  << std::endl;
+        return ~0;
+    }
+    //Note 1 channel transmission is hardcoded
+    size_t channel = 0;
+    
+    
+    uhd::tune_request_t tx_tune_request(tx_freq);
+    if (vm.count("tx-int-n"))
+        tx_tune_request.args = uhd::device_addr_t("mode_n=integer");
+    usrp->set_tx_freq(tx_tune_request, channel);
+    //printing transmit channel
+    std::cout << boost::format("Setting TX Freq: %f MHz...") % (tx_freq / 1e6)
+                << std::endl;
+    std::cout << boost::format("Actual TX Freq: %f MHz...")
+                        % (usrp->get_tx_freq(channel) / 1e6)
+                << std::endl
+                << std::endl;
+    
     return 0;
 }
