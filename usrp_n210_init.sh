@@ -7,10 +7,12 @@ uhd_find_devices
 
 # NOTE:
 # note "dev <name> mtu" name corresponds to network card name
-# to find run "$ ip link list" in terminal
+
+# to find run "$ ip link list" in terminal and try use the altName
+
 # if multiple networ cards check the MAC address 
 #                       corresponding to configured card
-# END
+
 
 # Set MTU size
 # https://www.cyberciti.biz/faq/how-can-i-setup-the-mtu-for-my-network-interface/

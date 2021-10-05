@@ -60,6 +60,14 @@ int main(int argc, char* argv[])
     po::store(po::parse_command_line(argc, argv, desc), vm);
     po::notify(vm);
 
+     //print the help message
+    if (vm.count("help")) {
+        std::cout << boost::format("Rx multi samples to file %s") % desc << std::endl;
+        std::cout << std::endl << "This application transmits and recieves data on a single ettus N210\n" << std::endl;
+        return ~0;
+    }
+
+
 
     return 0;
 }
