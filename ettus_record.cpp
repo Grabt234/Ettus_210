@@ -24,7 +24,7 @@ namespace po = boost::program_options;
 
 
 /***********************************************************************
- * Signal handlers
+ * Signal handlers - black box
  **********************************************************************/
 static bool stop_signal_called = false;
 void sig_int_handler(int)
@@ -32,6 +32,103 @@ void sig_int_handler(int)
     stop_signal_called = true;
 }
 
+/***********************************************************************
+ * recv_to_file function - black box
+ **********************************************************************/
+template <typename samp_type>
+void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
+    const std::string& cpu_format,
+    const std::string& wire_format,
+    const std::string& file,
+    size_t samps_per_buff,
+    int num_requested_samples,
+    double settling_time,
+    std::vector<size_t> rx_channel_nums)
+{
+    int num_total_samps = 0;
+    // create a receive streamer
+    uhd::stream_args_t stream_args(cpu_format, wire_format);
+    stream_args.channels             = rx_channel_nums;
+    uhd::rx_streamer::sptr rx_stream = usrp->get_rx_stream(stream_args);
+
+    // Prepare buffers for received samples and metadata
+    uhd::rx_metadata_t md;
+    std::vector<std::vector<samp_type>> buffs(
+        rx_channel_nums.size(), std::vector<samp_type>(samps_per_buff));
+    // create a vector of pointers to point to each of the channel buffers
+    std::vector<samp_type*> buff_ptrs;
+    for (size_t i = 0; i < buffs.size(); i++) {
+        buff_ptrs.push_back(&buffs[i].front());
+    }
+
+    // Create one ofstream object per channel
+    // (use shared_ptr because ofstream is non-copyable)
+    std::vector<std::shared_ptr<std::ofstream>> outfiles;
+    for (size_t i = 0; i < buffs.size(); i++) {
+        const std::string this_filename = generate_out_filename(file, buffs.size(), i);
+        outfiles.push_back(std::shared_ptr<std::ofstream>(
+            new std::ofstream(this_filename.c_str(), std::ofstream::binary)));
+    }
+    UHD_ASSERT_THROW(outfiles.size() == buffs.size());
+    UHD_ASSERT_THROW(buffs.size() == rx_channel_nums.size());
+    bool overflow_message = true;
+    double timeout =
+        settling_time + 0.1f; // expected settling time + padding for first recv
+
+    // setup streaming
+    uhd::stream_cmd_t stream_cmd((num_requested_samples == 0)
+                                     ? uhd::stream_cmd_t::STREAM_MODE_START_CONTINUOUS
+                                     : uhd::stream_cmd_t::STREAM_MODE_NUM_SAMPS_AND_DONE);
+    stream_cmd.num_samps  = num_requested_samples;
+    stream_cmd.stream_now = false;
+    stream_cmd.time_spec  = uhd::time_spec_t(settling_time);
+    rx_stream->issue_stream_cmd(stream_cmd);
+
+    while (not stop_signal_called
+           and (num_requested_samples > num_total_samps or num_requested_samples == 0)) {
+        size_t num_rx_samps = rx_stream->recv(buff_ptrs, samps_per_buff, md, timeout);
+        timeout             = 0.1f; // small timeout for subsequent recv
+
+        if (md.error_code == uhd::rx_metadata_t::ERROR_CODE_TIMEOUT) {
+            std::cout << boost::format("Timeout while streaming") << std::endl;
+            break;
+        }
+        if (md.error_code == uhd::rx_metadata_t::ERROR_CODE_OVERFLOW) {
+            if (overflow_message) {
+                overflow_message = false;
+                std::cerr
+                    << boost::format(
+                           "Got an overflow indication. Please consider the following:\n"
+                           "  Your write medium must sustain a rate of %fMB/s.\n"
+                           "  Dropped samples will not be written to the file.\n"
+                           "  Please modify this example for your purposes.\n"
+                           "  This message will not appear again.\n")
+                           % (usrp->get_rx_rate() * sizeof(samp_type) / 1e6);
+            }
+            continue;
+        }
+        if (md.error_code != uhd::rx_metadata_t::ERROR_CODE_NONE) {
+            throw std::runtime_error(
+                str(boost::format("Receiver error %s") % md.strerror()));
+        }
+
+        num_total_samps += num_rx_samps;
+
+        for (size_t i = 0; i < outfiles.size(); i++) {
+            outfiles[i]->write(
+                (const char*)buff_ptrs[i], num_rx_samps * sizeof(samp_type));
+        }
+    }
+
+    // Shut down receiver
+    stream_cmd.stream_mode = uhd::stream_cmd_t::STREAM_MODE_STOP_CONTINUOUS;
+    rx_stream->issue_stream_cmd(stream_cmd);
+
+    // Close files
+    for (size_t i = 0; i < outfiles.size(); i++) {
+        outfiles[i]->close();
+    }
+}
 
 /***********************************************************************
  * Main function
@@ -287,32 +384,125 @@ int main(int argc, char* argv[])
     uhd::stream_args_t stream_args("fc32", otw);
     uhd::tx_streamer::sptr tx_stream = usrp->get_tx_stream(stream_args);
 
-    // allocate a buffer which we re-use for each channel
-    if (spb == 0) {
+   // allocate a buffer which we re-use for each channel
+    if (spb == 0)
         spb = tx_stream->get_max_num_samps() * 10;
-    }
     std::vector<std::complex<float>> buff(spb);
-    std::vector<std::complex<float>*> buffs(channel, &buff.front());
+    int num_channels = tx_channel_nums.size();
 
-    // pre-fill the buffer with the waveform
-    for (size_t n = 0; n < buff.size(); n++) {
-        buff[n] = wave_table(index += step);
-    }
-
-    std::cout << boost::format("Setting device timestamp to 0...") << std::endl;
-
-    usrp->set_time_now(0.0);
-
-    std::signal(SIGINT, &sig_int_handler);
-    std::cout << "Press Ctrl + C to stop streaming..." << std::endl;
-
-    // Set up metadata. We start streaming a bit in the future
-    // to allow MIMO operation:
+    // setup the metadata flags
     uhd::tx_metadata_t md;
     md.start_of_burst = true;
     md.end_of_burst   = false;
     md.has_time_spec  = true;
-    md.time_spec      = usrp->get_time_now() + uhd::time_spec_t(0.1);
+    md.time_spec = uhd::time_spec_t(0.5); // give us 0.5 seconds to fill the tx buffers
+
+    //463 and down
+
+    // Check Ref and LO Lock detect
+    std::vector<std::string> tx_sensor_names, rx_sensor_names;
+    tx_sensor_names = tx_usrp->get_tx_sensor_names(0);
+    if (std::find(tx_sensor_names.begin(), tx_sensor_names.end(), "lo_locked")
+        != tx_sensor_names.end()) {
+        uhd::sensor_value_t lo_locked = tx_usrp->get_tx_sensor("lo_locked", 0);
+        std::cout << boost::format("Checking TX: %s ...") % lo_locked.to_pp_string()
+                  << std::endl;
+        UHD_ASSERT_THROW(lo_locked.to_bool());
+    }
+    rx_sensor_names = rx_usrp->get_rx_sensor_names(0);
+    if (std::find(rx_sensor_names.begin(), rx_sensor_names.end(), "lo_locked")
+        != rx_sensor_names.end()) {
+        uhd::sensor_value_t lo_locked = rx_usrp->get_rx_sensor("lo_locked", 0);
+        std::cout << boost::format("Checking RX: %s ...") % lo_locked.to_pp_string()
+                  << std::endl;
+        UHD_ASSERT_THROW(lo_locked.to_bool());
+    }
+
+    tx_sensor_names = tx_usrp->get_mboard_sensor_names(0);
+    if ((ref == "mimo")
+        and (std::find(tx_sensor_names.begin(), tx_sensor_names.end(), "mimo_locked")
+                != tx_sensor_names.end())) {
+        uhd::sensor_value_t mimo_locked = tx_usrp->get_mboard_sensor("mimo_locked", 0);
+        std::cout << boost::format("Checking TX: %s ...") % mimo_locked.to_pp_string()
+                  << std::endl;
+        UHD_ASSERT_THROW(mimo_locked.to_bool());
+    }
+    if ((ref == "external")
+        and (std::find(tx_sensor_names.begin(), tx_sensor_names.end(), "ref_locked")
+                != tx_sensor_names.end())) {
+        uhd::sensor_value_t ref_locked = tx_usrp->get_mboard_sensor("ref_locked", 0);
+        std::cout << boost::format("Checking TX: %s ...") % ref_locked.to_pp_string()
+                  << std::endl;
+        UHD_ASSERT_THROW(ref_locked.to_bool());
+    }
+
+    rx_sensor_names = rx_usrp->get_mboard_sensor_names(0);
+    if ((ref == "mimo")
+        and (std::find(rx_sensor_names.begin(), rx_sensor_names.end(), "mimo_locked")
+                != rx_sensor_names.end())) {
+        uhd::sensor_value_t mimo_locked = rx_usrp->get_mboard_sensor("mimo_locked", 0);
+        std::cout << boost::format("Checking RX: %s ...") % mimo_locked.to_pp_string()
+                  << std::endl;
+        UHD_ASSERT_THROW(mimo_locked.to_bool());
+    }
+    if ((ref == "external")
+        and (std::find(rx_sensor_names.begin(), rx_sensor_names.end(), "ref_locked")
+                != rx_sensor_names.end())) {
+        uhd::sensor_value_t ref_locked = rx_usrp->get_mboard_sensor("ref_locked", 0);
+        std::cout << boost::format("Checking RX: %s ...") % ref_locked.to_pp_string()
+                  << std::endl;
+        UHD_ASSERT_THROW(ref_locked.to_bool());
+    }
+
+    if (total_num_samps == 0) {
+        std::signal(SIGINT, &sig_int_handler);
+        std::cout << "Press Ctrl + C to stop streaming..." << std::endl;
+    }
+
+    // reset usrp time to prepare for transmit/receive
+    std::cout << boost::format("Setting device timestamp to 0...") << std::endl;
+    tx_usrp->set_time_now(uhd::time_spec_t(0.0));
+
     
-    return 0;
+
+    //line 523 and up
+
+    // reset usrp time to prepare for transmit/receive
+    std::cout << boost::format("Setting device timestamp to 0...") << std::endl;
+    tx_usrp->set_time_now(uhd::time_spec_t(0.0));
+
+    // start transmit worker thread
+    boost::thread_group transmit_thread;
+    transmit_thread.create_thread(std::bind(
+        &transmit_worker, buff, wave_table, tx_stream, md, step, index, num_channels));
+
+    // recv to file
+    if (type == "double")
+        recv_to_file<std::complex<double>>(
+            rx_usrp, "fc64", otw, file, spb, total_num_samps, settling, rx_channel_nums);
+    else if (type == "float")
+        recv_to_file<std::complex<float>>(
+            rx_usrp, "fc32", otw, file, spb, total_num_samps, settling, rx_channel_nums);
+    else if (type == "short")
+        recv_to_file<std::complex<short>>(
+            rx_usrp, "sc16", otw, file, spb, total_num_samps, settling, rx_channel_nums);
+    else {
+        // clean up transmit worker
+        stop_signal_called = true;
+        transmit_thread.join_all();
+        throw std::runtime_error("Unknown type " + type);
+    }
+
+    // clean up transmit worker
+    stop_signal_called = true;
+    transmit_thread.join_all();
+
+    // finished
+    std::cout << std::endl << "Done!" << std::endl << std::endl;
+    return EXIT_SUCCESS;
+
+
+
+
+
 }
