@@ -37,4 +37,20 @@ uhd/types/device_addr.hpp
 -
 uhd/utils/thread.hpp
 -
+wavetable.hpp
+/home/grant/EttusN210/Code/Ettus_210/wavetable.hpp
+
+/home/grant/EttusN210/Code/Ettus_210/wavetable.hpp
+cmath
+-
+complex
+-
+stdexcept
+-
+string
+-
+vector
+-
+algorithm
+-
 

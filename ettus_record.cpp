@@ -16,6 +16,7 @@
 #include <uhd/types/device_addr.hpp>
 #include <uhd/utils/thread.hpp>
 
+#include "wavetable.hpp"
 
 // https://www.boost.org/doc/libs/1_63_0/doc/html/program_options/tutorial.html
 // Configures variables that can be set for program and their defaults
@@ -31,10 +32,11 @@ int main(int argc, char* argv[])
     system("./usrp_n210_init.sh");
 
     // 
-    std::string devAddress, file, ref, pps, print_time;
+    std::string devAddress, file, ref, wave_type, pps, print_time;
     size_t total_num_samps, numChannels;
     double tx_rate, rx_rate, tx_freq, rx_freq, tx_gain, rx_gain, tx_bw, rx_bw;
-    double bw, total_time, spb, setup_time;
+    double wave_freq, total_time, spb, setup_time;
+    float ampl;
 	uhd::rx_metadata_t md;
 
     //setup the program options
@@ -54,6 +56,9 @@ int main(int argc, char* argv[])
         ("rx-gain", po::value<double>(&rx_gain)->default_value(0), "gain for the receive RF chain")
         ("tx-bw", po::value<double>(&tx_bw)->default_value(0.0), "analog frontend filter bandwidth in Hz")
         ("rx-bw", po::value<double>(&rx_bw)->default_value(0.0), "analog frontend filter bandwidth in Hz")
+        ("ampl", po::value<float>(&ampl)->default_value(float(0.3)), "amplitude of the waveform [0 to 0.7]")
+        ("wave-type", po::value<std::string>(&wave_type)->default_value("CONST"), "waveform type (CONST, SQUARE, RAMP, SINE)")
+        ("wave-freq", po::value<double>(&wave_freq)->default_value(0), "waveform frequency in Hz")
         ("pps", po::value<std::string>(&pps)->default_value("internal"), "pps source (gpsdo, internal, external)")
 		("ref", po::value<std::string>(&ref)->default_value("internal"), "reference source (gpsdo, internal, external)")
 		("print", po::value<std::string>(&print_time)->default_value("N"), "y/N")
@@ -81,6 +86,11 @@ int main(int argc, char* argv[])
     std::cout << std::endl;
     // setting rx and tx subdevice
  
+
+    //---------------------------------------------------------------------
+    //              Configuring Tx an RX channels
+    //---------------------------------------------------------------------
+
     usrp->set_tx_subdev_spec(uhd::usrp::subdev_spec_t("A:0"), 0);
     usrp->set_rx_subdev_spec(uhd::usrp::subdev_spec_t("A:0"), 0);
     usrp->set_rx_antenna ("RX2",0);
@@ -151,6 +161,11 @@ int main(int argc, char* argv[])
                 << std::endl
                 << std::endl;
     
+    //---------------------------------------------------------------------
+    //              Configuring Tx an RX channels
+    //---------------------------------------------------------------------
+
+
     // set the rf gain
     if (vm.count("tx-gain")) {
         std::cout << boost::format("Setting TX Gain: %f dB...") % tx_gain
@@ -211,6 +226,30 @@ int main(int argc, char* argv[])
     // set the receive antenna
     usrp->set_rx_antenna("RX2", channel);
     
+
+    //---------------------------------------------------------------------
+    //              Configuring Transmitted TWaveform
+    //---------------------------------------------------------------------
+
+
+    // for the const wave, set the wave freq for small samples per period
+    if (wave_freq == 0 and wave_type == "CONST") {
+        wave_freq = usrp->get_tx_rate() / 2;
+    }
+
+    // error when the waveform is not possible to generate
+    if (std::abs(wave_freq) > usrp->get_tx_rate() / 2) {
+        throw std::runtime_error("Tx wave freq out of Nyquist zone");
+    }
+
+    if (usrp->get_tx_rate() / std::abs(wave_freq) > wave_table_len / 2) {
+        throw std::runtime_error("Tx wave freq too small for table");
+    }
+
+    // pre-compute the waveform values
+    const wave_table_class wave_table(wave_type, ampl);
+    const size_t step = std::lround(wave_freq / usrp->get_tx_rate() * wave_table_len);
+    size_t index = 0;
 
     return 0;
 }
