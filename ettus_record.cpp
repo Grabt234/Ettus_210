@@ -22,6 +22,21 @@
 // Configures variables that can be set for program and their defaults
 namespace po = boost::program_options;
 
+
+/***********************************************************************
+ * Signal handlers
+ **********************************************************************/
+static bool stop_signal_called = false;
+void sig_int_handler(int)
+{
+    stop_signal_called = true;
+}
+
+
+/***********************************************************************
+ * Main function
+ **********************************************************************/
+
 int main(int argc, char* argv[])
 {
     uhd::set_thread_priority_safe();
@@ -32,7 +47,7 @@ int main(int argc, char* argv[])
     system("./usrp_n210_init.sh");
 
     // 
-    std::string devAddress, file, ref, wave_type, pps, print_time;
+    std::string devAddress, file, ref, wave_type, pps, otw, print_time;
     size_t total_num_samps, numChannels;
     double tx_rate, rx_rate, tx_freq, rx_freq, tx_gain, rx_gain, tx_bw, rx_bw;
     double wave_freq, lo_offset, total_time, spb, setup_time;
@@ -62,7 +77,8 @@ int main(int argc, char* argv[])
         ("lo-offset", po::value<double>(&lo_offset)->default_value(0.0),"Offset for frontend LO in Hz (optional)")
         ("pps", po::value<std::string>(&pps)->default_value("internal"), "pps source (gpsdo, internal, external)")
 		("ref", po::value<std::string>(&ref)->default_value("internal"), "reference source (gpsdo, internal, external)")
-		("print", po::value<std::string>(&print_time)->default_value("N"), "y/N")
+		("otw", po::value<std::string>(&otw)->default_value("sc16"), "specify the over-the-wire sample mode")
+        ("print", po::value<std::string>(&print_time)->default_value("N"), "y/N")
         ("setup", po::value<double>(&setup_time)->default_value(1.0), "seconds of setup time")
     ;
 
@@ -266,9 +282,37 @@ int main(int argc, char* argv[])
     // allow for some setup time
     std::this_thread::sleep_for(std::chrono::seconds(1)); 
 
+    // create a transmit streamer
+    // linearly map channels (index0 = channel0, index1 = channel1, ...)
+    uhd::stream_args_t stream_args("fc32", otw);
+    uhd::tx_streamer::sptr tx_stream = usrp->get_tx_stream(stream_args);
 
+    // allocate a buffer which we re-use for each channel
+    if (spb == 0) {
+        spb = tx_stream->get_max_num_samps() * 10;
+    }
+    std::vector<std::complex<float>> buff(spb);
+    std::vector<std::complex<float>*> buffs(channel, &buff.front());
 
+    // pre-fill the buffer with the waveform
+    for (size_t n = 0; n < buff.size(); n++) {
+        buff[n] = wave_table(index += step);
+    }
 
+    std::cout << boost::format("Setting device timestamp to 0...") << std::endl;
 
+    usrp->set_time_now(0.0);
+
+    std::signal(SIGINT, &sig_int_handler);
+    std::cout << "Press Ctrl + C to stop streaming..." << std::endl;
+
+    // Set up metadata. We start streaming a bit in the future
+    // to allow MIMO operation:
+    uhd::tx_metadata_t md;
+    md.start_of_burst = true;
+    md.end_of_burst   = false;
+    md.has_time_spec  = true;
+    md.time_spec      = usrp->get_time_now() + uhd::time_spec_t(0.1);
+    
     return 0;
 }
