@@ -35,7 +35,7 @@ int main(int argc, char* argv[])
     std::string devAddress, file, ref, wave_type, pps, print_time;
     size_t total_num_samps, numChannels;
     double tx_rate, rx_rate, tx_freq, rx_freq, tx_gain, rx_gain, tx_bw, rx_bw;
-    double wave_freq, total_time, spb, setup_time;
+    double wave_freq, lo_offset, total_time, spb, setup_time;
     float ampl;
 	uhd::rx_metadata_t md;
 
@@ -59,6 +59,7 @@ int main(int argc, char* argv[])
         ("ampl", po::value<float>(&ampl)->default_value(float(0.3)), "amplitude of the waveform [0 to 0.7]")
         ("wave-type", po::value<std::string>(&wave_type)->default_value("CONST"), "waveform type (CONST, SQUARE, RAMP, SINE)")
         ("wave-freq", po::value<double>(&wave_freq)->default_value(0), "waveform frequency in Hz")
+        ("lo-offset", po::value<double>(&lo_offset)->default_value(0.0),"Offset for frontend LO in Hz (optional)")
         ("pps", po::value<std::string>(&pps)->default_value("internal"), "pps source (gpsdo, internal, external)")
 		("ref", po::value<std::string>(&ref)->default_value("internal"), "reference source (gpsdo, internal, external)")
 		("print", po::value<std::string>(&print_time)->default_value("N"), "y/N")
@@ -114,6 +115,12 @@ int main(int argc, char* argv[])
     std::cout << boost::format("Using Device: %s \n") % usrp->get_pp_string()
               << std::endl;
 
+        
+    //---------------------------------------------------------------------
+    //              Configuring Tx an RX channels
+    //---------------------------------------------------------------------
+
+
     // set the transmit sample rate
     if (not vm.count("tx-rate")) { //count instances of flag
         std::cerr << "Please specify the transmit sample rate with --tx-rate"
@@ -160,10 +167,6 @@ int main(int argc, char* argv[])
                         % (usrp->get_tx_freq(channel) / 1e6)
                 << std::endl
                 << std::endl;
-    
-    //---------------------------------------------------------------------
-    //              Configuring Tx an RX channels
-    //---------------------------------------------------------------------
 
 
     // set the rf gain
@@ -206,10 +209,11 @@ int main(int argc, char* argv[])
     if (vm.count("rx-gain")) {
         std::cout << boost::format("Setting RX Gain: %f dB...") % rx_gain
                     << std::endl;
-        usrp->set_rx_gain(rx_gain, channel);
-        std::cout << boost::format("Actual RX Gain: %f dB...")
-                            % usrp->get_rx_gain(channel)
-                    << std::endl
+        usrp->set_rx_gain(rx_g    
+    //---------------------------------------------------------------------
+    //              Configuring Tx an RX channels
+    //---------------------------------------------------------------------
+d::endl
                     << std::endl;
     }
 
@@ -250,6 +254,14 @@ int main(int argc, char* argv[])
     const wave_table_class wave_table(wave_type, ampl);
     const size_t step = std::lround(wave_freq / usrp->get_tx_rate() * wave_table_len);
     size_t index = 0;
+    
+
+    //---------------------------------------------------------------------
+    //              Data Handling Config
+    //---------------------------------------------------------------------
+
+
+    std::this_thread::sleep_for(std::chrono::seconds(1)); // allow for some setup time
 
     return 0;
 }
