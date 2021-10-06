@@ -205,16 +205,19 @@ int main(int argc, char* argv[])
                 << std::endl
                 << std::endl;
     
+    //---------------------------------------------------------------------
+    //              Configuring Tx an RX channels
+    //---------------------------------------------------------------------
+
     // set the receive rf gain
     if (vm.count("rx-gain")) {
         std::cout << boost::format("Setting RX Gain: %f dB...") % rx_gain
                     << std::endl;
-        usrp->set_rx_gain(rx_g    
-    //---------------------------------------------------------------------
-    //              Configuring Tx an RX channels
-    //---------------------------------------------------------------------
-d::endl
-                    << std::endl;
+        usrp->set_rx_gain(rx_gain, channel);
+        std::cout << boost::format("Actual RX Gain: %f dB...")
+                            % usrp->get_rx_gain(channel)
+                     << std::endl
+                     << std::endl;
     }
 
     // set the receive analog frontend filter bandwidth
@@ -260,8 +263,12 @@ d::endl
     //              Data Handling Config
     //---------------------------------------------------------------------
 
+    // allow for some setup time
+    std::this_thread::sleep_for(std::chrono::seconds(1)); 
 
-    std::this_thread::sleep_for(std::chrono::seconds(1)); // allow for some setup time
+
+
+
 
     return 0;
 }
