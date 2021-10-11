@@ -1,3 +1,5 @@
+#include "wavetable.hpp"
+
 #include <iostream>
 #include <vector>
 #include <complex>
@@ -6,9 +8,8 @@
 #include <csignal>
 #include <chrono>
 #include <ctime>
-
-#include <boost/program_options.hpp>
-#include <boost/format.hpp>
+#include <cmath>
+#include <functional>
 
 #include <uhd/usrp/multi_usrp.hpp>
 #include <uhd/exception.hpp>
@@ -16,7 +17,16 @@
 #include <uhd/types/device_addr.hpp>
 #include <uhd/utils/thread.hpp>
 
-#include "wavetable.hpp"
+
+#include <boost/algorithm/string.hpp>
+#include <boost/filesystem.hpp>
+#include <boost/format.hpp>
+#include <boost/program_options.hpp>
+#include <boost/thread/thread.hpp>
+
+
+
+
 
 // https://www.boost.org/doc/libs/1_63_0/doc/html/program_options/tutorial.html
 // Configures variables that can be set for program and their defaults
@@ -31,6 +41,58 @@ void sig_int_handler(int)
 {
     stop_signal_called = true;
 }
+
+/***********************************************************************
+ * transmit_worker function
+ * A function to be used as a boost::thread_group thread for transmitting
+ **********************************************************************/
+void transmit_worker(std::vector<std::complex<float>> buff,
+    wave_table_class wave_table,
+    uhd::tx_streamer::sptr tx_streamer,
+    uhd::tx_metadata_t metadata,
+    size_t step,
+    size_t index,
+    int num_channels)
+{
+    std::vector<std::complex<float>*> buffs(num_channels, &buff.front());
+
+    // send data until the signal handler gets called
+    while (not stop_signal_called) {
+        // fill the buffer with the waveform
+        for (size_t n = 0; n < buff.size(); n++) {
+            buff[n] = wave_table(index += step);
+        }
+
+        // send the entire contents of the buffer
+        tx_streamer->send(buffs, buff.size(), metadata);
+
+        metadata.start_of_burst = false;
+        metadata.has_time_spec  = false;
+    }
+
+    // send a mini EOB packet
+    metadata.end_of_burst = true;
+    tx_streamer->send("", 0, metadata);
+}
+
+/***********************************************************************
+ * Utilities - black box
+ **********************************************************************/
+//! Change to filename, e.g. from usrp_samples.dat to usrp_samples.00.dat,
+//  but only if multiple names are to be generated.
+std::string generate_out_filename(
+    const std::string& base_fn, size_t n_names, size_t this_name)
+{
+    if (n_names == 1) {
+        return base_fn;
+    }
+
+    boost::filesystem::path base_fn_fp(base_fn);
+    base_fn_fp.replace_extension(boost::filesystem::path(
+        str(boost::format("%02d%s") % this_name % base_fn_fp.extension().string())));
+    return base_fn_fp.string();
+}
+
 
 /***********************************************************************
  * recv_to_file function - black box
@@ -136,6 +198,7 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
 
 int main(int argc, char* argv[])
 {
+
     uhd::set_thread_priority_safe();
 
     // Network adapters need some configuration to work with x300. This script does all that. Proved to work for GNU Radio 100 times before.
@@ -144,12 +207,11 @@ int main(int argc, char* argv[])
     system("./usrp_n210_init.sh");
 
     // 
-    std::string devAddress, file, ref, wave_type, pps, otw, print_time;
+    std::string devAddress, file, ref, wave_type,type, pps, otw, print_time;
     size_t total_num_samps, numChannels;
     double tx_rate, rx_rate, tx_freq, rx_freq, tx_gain, rx_gain, tx_bw, rx_bw;
-    double wave_freq, lo_offset, total_time, spb, setup_time;
+    double wave_freq, lo_offset, total_time, settling, spb, setup_time;
     float ampl;
-	uhd::rx_metadata_t md;
 
     //setup the program options
     po::options_description desc("Allowed options");
@@ -158,7 +220,9 @@ int main(int argc, char* argv[])
         ("dev", po::value<std::string>(&devAddress)->default_value("addr0=192.168.10.2"), "single uhd device address args (dev=addr0=192.168.10.2")
         ("file", po::value<std::string>(&file)->default_value("usrp_samples.bin"), "name of the file to write binary samples to")
         ("nsamps", po::value<size_t>(&total_num_samps), "total number of samples to receive")
+        ("type", po::value<std::string>(&type)->default_value("short"), "sample type in file: double, float, or short")
         ("duration", po::value<double>(&total_time)->default_value(0), "total number of seconds to receive")
+        ("settling", po::value<double>(&settling)->default_value(double(0.2)), "settling time (seconds) before receiving")
         ("spb", po::value<double>(&spb)->default_value(1), "buffer multiplier") //buffer per channel
         ("tx-rate", po::value<double>(&tx_rate), "rate of transmit outgoing samples")
         ("rx-rate", po::value<double>(&rx_rate), "rate of receive incoming samples")
@@ -214,8 +278,6 @@ int main(int argc, char* argv[])
     std::cout << boost::format("Tx: %s") % usrp->get_tx_antenna() << std::endl;
     std::cout << boost::format("Rx: %s") % usrp->get_rx_antenna() << std::endl;
     
-
-
     // Lock mboard clocks 
     if (vm.count("ref")) {
         usrp->set_clock_source(ref);
@@ -388,7 +450,7 @@ int main(int argc, char* argv[])
     if (spb == 0)
         spb = tx_stream->get_max_num_samps() * 10;
     std::vector<std::complex<float>> buff(spb);
-    int num_channels = tx_channel_nums.size();
+    int num_channels = channel;
 
     // setup the metadata flags
     uhd::tx_metadata_t md;
@@ -401,28 +463,28 @@ int main(int argc, char* argv[])
 
     // Check Ref and LO Lock detect
     std::vector<std::string> tx_sensor_names, rx_sensor_names;
-    tx_sensor_names = tx_usrp->get_tx_sensor_names(0);
+    tx_sensor_names = usrp->get_tx_sensor_names(0);
     if (std::find(tx_sensor_names.begin(), tx_sensor_names.end(), "lo_locked")
         != tx_sensor_names.end()) {
-        uhd::sensor_value_t lo_locked = tx_usrp->get_tx_sensor("lo_locked", 0);
+        uhd::sensor_value_t lo_locked = usrp->get_tx_sensor("lo_locked", 0);
         std::cout << boost::format("Checking TX: %s ...") % lo_locked.to_pp_string()
                   << std::endl;
         UHD_ASSERT_THROW(lo_locked.to_bool());
     }
-    rx_sensor_names = rx_usrp->get_rx_sensor_names(0);
+    rx_sensor_names = usrp->get_rx_sensor_names(0);
     if (std::find(rx_sensor_names.begin(), rx_sensor_names.end(), "lo_locked")
         != rx_sensor_names.end()) {
-        uhd::sensor_value_t lo_locked = rx_usrp->get_rx_sensor("lo_locked", 0);
+        uhd::sensor_value_t lo_locked = usrp->get_rx_sensor("lo_locked", 0);
         std::cout << boost::format("Checking RX: %s ...") % lo_locked.to_pp_string()
                   << std::endl;
         UHD_ASSERT_THROW(lo_locked.to_bool());
     }
 
-    tx_sensor_names = tx_usrp->get_mboard_sensor_names(0);
+    tx_sensor_names = usrp->get_mboard_sensor_names(0);
     if ((ref == "mimo")
         and (std::find(tx_sensor_names.begin(), tx_sensor_names.end(), "mimo_locked")
                 != tx_sensor_names.end())) {
-        uhd::sensor_value_t mimo_locked = tx_usrp->get_mboard_sensor("mimo_locked", 0);
+        uhd::sensor_value_t mimo_locked = usrp->get_mboard_sensor("mimo_locked", 0);
         std::cout << boost::format("Checking TX: %s ...") % mimo_locked.to_pp_string()
                   << std::endl;
         UHD_ASSERT_THROW(mimo_locked.to_bool());
@@ -430,17 +492,17 @@ int main(int argc, char* argv[])
     if ((ref == "external")
         and (std::find(tx_sensor_names.begin(), tx_sensor_names.end(), "ref_locked")
                 != tx_sensor_names.end())) {
-        uhd::sensor_value_t ref_locked = tx_usrp->get_mboard_sensor("ref_locked", 0);
+        uhd::sensor_value_t ref_locked = usrp->get_mboard_sensor("ref_locked", 0);
         std::cout << boost::format("Checking TX: %s ...") % ref_locked.to_pp_string()
                   << std::endl;
         UHD_ASSERT_THROW(ref_locked.to_bool());
     }
 
-    rx_sensor_names = rx_usrp->get_mboard_sensor_names(0);
+    rx_sensor_names = usrp->get_mboard_sensor_names(0);
     if ((ref == "mimo")
         and (std::find(rx_sensor_names.begin(), rx_sensor_names.end(), "mimo_locked")
                 != rx_sensor_names.end())) {
-        uhd::sensor_value_t mimo_locked = rx_usrp->get_mboard_sensor("mimo_locked", 0);
+        uhd::sensor_value_t mimo_locked = usrp->get_mboard_sensor("mimo_locked", 0);
         std::cout << boost::format("Checking RX: %s ...") % mimo_locked.to_pp_string()
                   << std::endl;
         UHD_ASSERT_THROW(mimo_locked.to_bool());
@@ -448,7 +510,7 @@ int main(int argc, char* argv[])
     if ((ref == "external")
         and (std::find(rx_sensor_names.begin(), rx_sensor_names.end(), "ref_locked")
                 != rx_sensor_names.end())) {
-        uhd::sensor_value_t ref_locked = rx_usrp->get_mboard_sensor("ref_locked", 0);
+        uhd::sensor_value_t ref_locked = usrp->get_mboard_sensor("ref_locked", 0);
         std::cout << boost::format("Checking RX: %s ...") % ref_locked.to_pp_string()
                   << std::endl;
         UHD_ASSERT_THROW(ref_locked.to_bool());
@@ -461,7 +523,7 @@ int main(int argc, char* argv[])
 
     // reset usrp time to prepare for transmit/receive
     std::cout << boost::format("Setting device timestamp to 0...") << std::endl;
-    tx_usrp->set_time_now(uhd::time_spec_t(0.0));
+    usrp->set_time_now(uhd::time_spec_t(0.0));
 
     
 
@@ -469,23 +531,25 @@ int main(int argc, char* argv[])
 
     // reset usrp time to prepare for transmit/receive
     std::cout << boost::format("Setting device timestamp to 0...") << std::endl;
-    tx_usrp->set_time_now(uhd::time_spec_t(0.0));
+    usrp->set_time_now(uhd::time_spec_t(0.0));
 
     // start transmit worker thread
     boost::thread_group transmit_thread;
     transmit_thread.create_thread(std::bind(
         &transmit_worker, buff, wave_table, tx_stream, md, step, index, num_channels));
 
+    std::vector<long unsigned int> channels ={channel}; 
+
     // recv to file
     if (type == "double")
         recv_to_file<std::complex<double>>(
-            rx_usrp, "fc64", otw, file, spb, total_num_samps, settling, rx_channel_nums);
+            usrp, "fc64", otw, file, spb, total_num_samps, settling, channels);
     else if (type == "float")
         recv_to_file<std::complex<float>>(
-            rx_usrp, "fc32", otw, file, spb, total_num_samps, settling, rx_channel_nums);
+            usrp, "fc32", otw, file, spb, total_num_samps, settling, channels);
     else if (type == "short")
         recv_to_file<std::complex<short>>(
-            rx_usrp, "sc16", otw, file, spb, total_num_samps, settling, rx_channel_nums);
+            usrp, "sc16", otw, file, spb, total_num_samps, settling, channels);
     else {
         // clean up transmit worker
         stop_signal_called = true;
