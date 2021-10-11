@@ -68,6 +68,8 @@ void send_from_file(
 
     // loop until the entire file has been read
 
+    std::cout << boost::format("Reading from file : %s...") %file << std::endl;
+
     while (not md.end_of_burst and not stop_signal_called) {
         infile.read((char*)&buff.front(), buff.size() * sizeof(samp_type));
         size_t num_tx_samps = size_t(infile.gcount() / sizeof(samp_type));
@@ -519,13 +521,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     // reset usrp time to prepare for transmit/receive
     std::cout << boost::format("Setting device timestamp to 0...") << std::endl;
     tx_usrp->set_time_now(uhd::time_spec_t(0.0));
-
- 
-    // start transmit worker thread
-    //boost::thread_group transmit_thread;
-    //transmit_thread.create_thread(std::bind(
-    //    &transmit_worker, buff, wave_table, tx_stream, md, step, index, num_channels));
-
   
 
     // send from file
@@ -553,11 +548,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
 
     // finished
     std::cout << std::endl << "Done!" << std::endl << std::endl;
-
-       
-    //transmit_thread.create_thread(std::bind(
-    //    &transmit_worker, buff, wave_table, tx_stream, md, step, index, num_channels));
-    
 
 
     // recv to file
