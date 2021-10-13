@@ -75,7 +75,8 @@ void send_from_file(
         size_t num_tx_samps = size_t(infile.gcount() / sizeof(samp_type));
 
         md.end_of_burst = infile.eof();
-
+        std::cout << boost::format("Reading")<< std::endl;
+        
         const size_t samples_sent = tx_stream->send(&buff.front(), num_tx_samps, md);
         if (samples_sent != num_tx_samps) {
             UHD_LOG_ERROR("TX-STREAM",
@@ -143,6 +144,7 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
 
     while (not stop_signal_called
            and (num_requested_samples > num_total_samps or num_requested_samples == 0)) {
+               
         size_t num_rx_samps = rx_stream->recv(buff_ptrs, samps_per_buff, md, timeout);
         timeout             = 0.1f; // small timeout for subsequent recv
 
