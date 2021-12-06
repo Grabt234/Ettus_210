@@ -84,13 +84,19 @@ void send_from_file(
 
         //std::cout << boost::format("Reading from file : %s...") %file << std::endl;
         std::ifstream infile(file.c_str(), std::ifstream::binary);
-        //check to read file again
         
         uhd::tx_metadata_t md;
         md.start_of_burst = false;
         md.end_of_burst   = false;
         std::vector<samp_type> buff(samps_per_buff);  
-        
+
+
+        // double a = 0;
+        // uhd::time_spec_t tv_start;
+        // uhd::time_spec_t tv_end;
+
+        //tv_start = tx_usrp->get_time_now();
+
         //loop through file once
         while (not md.end_of_burst and not stop_signal_called) {
             infile.read((char*)&buff.front(), buff.size() * sizeof(samp_type));
@@ -107,40 +113,19 @@ void send_from_file(
             }
         }
 
-        infile.close();
+        //moving back to start of file instead of closing
+        infile.clear();
+        infile.seekg(0);
         
-        if (repeat and delay > 0.0) {
-            
-            //insert delay from signal itself
+        // tv_end = tx_usrp->get_time_now();
+        // a = tv_start.get_real_secs();
+        // float time = (tv_end.get_real_secs()) - a;
 
-            // double a = 0;
-            // bool wait = true;
-            // uhd::time_spec_t tv_start;
-            // uhd::time_spec_t tv_end;
-
-            // tv_start = tx_usrp->get_time_now();
-            // a = tv_start.get_tick_count(1e+9);
-    
-            // while (wait)
-            // {
-            //     tv_end = tx_usrp->get_time_now();
-            //     //float time = (tv_end.tv_sec + tv_end.tv_nsec/1e+9) - (tv_start.tv_sec + tv-start.tv_nsec/1e+9);
-
-            //     float time = ((tv_end.get_tick_count(1e+9)) - a)*1/1e+9;
-
-            //     if (time > delay)
-            //     {
-            //         wait  = false;
-            //     }
-                
-               
-            // }   
-    
-            
-            //std::this_thread::sleep_for(std::chrono::nanoseconds(int64_t(delay * 1000000000)));
-            // std::cout << boost::format(" %f s") % ( tv.tv_nsec)
-            // << std::endl;
-        }
+        //std::cout << boost::format(" %zu ") % ( sizeof(samp_type))
+        //    << std::endl;
+        //std::cout << boost::format(" %f s") % ( time)
+        //    << std::endl;
+        // infile.close();
         
     }while(repeat and not stop_signal_called);
 
@@ -243,6 +228,7 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
     for (size_t i = 0; i < outfiles.size(); i++) {
         outfiles[i]->close();
     }
+
 }
 
 
@@ -515,7 +501,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
             usrp->set_rx_antenna(rx_ant, 0);
     
 
-
     /****************************
     * Local Oscillators
     *****************************/
@@ -586,6 +571,24 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
 //         UHD_ASSERT_THROW(ref_locked.to_bool());
 //     }
 
+    /****************************
+    * Coherency Configuration
+    *****************************/
+    //after this should have shared sense of time
+    usrp->set_time_next_pps(uhd::time_spec_t(0.0));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+    usrp->clear_command_time();
+    usrp->set_command_time(usrp->get_time_now() + uhd::time_spec_t(0.1)); //set cmd time for .1s in the future
+
+    usrp->clear_command_time();
+    usrp->set_command_time(usrp->get_time_now() + uhd::time_spec_t(0.1)); //set cmd time for .1s in the future;
+    std::this_thread::sleep_for(std::chrono::milliseconds(110)); //sleep 110ms (~10ms after retune occurs) to allow LO to lock
+    usrp->clear_command_time();
+
+
+
+
     if (total_num_samps == 0) {
         std::signal(SIGINT, &sig_int_handler);
         std::cout << "Press Ctrl + C to stop streaming..." << std::endl;
@@ -609,6 +612,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     else if (type == "short")
         cpu_format = "sc16";
     uhd::stream_args_t stream_args(cpu_format, otw);
+
     //channel_nums.push_back(boost::lexical_cast<size_t>(channel));
     //stream_args.channels             = ;
     uhd::tx_streamer::sptr tx_stream = usrp->get_tx_stream(stream_args);
@@ -637,6 +641,9 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     else
         throw std::runtime_error("Unknown type " + type);
 
+
+
+
     /****************************
     * RX Thread
     *****************************/
@@ -644,8 +651,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     std::vector<size_t> tmp_channels;
     tmp_channels.push_back(0);
 
-    //recv to file
-    
     if (type == "double")
         recv_to_file<std::complex<double>>(
             usrp, "fc64", otw, file_rx, spb, total_num_samps, settling, tmp_channels);
@@ -664,7 +669,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
 
     while (not stop_signal_called) {
         
-         std::this_thread::sleep_for (std::chrono::seconds(1));
+         std::this_thread::sleep_for (std::chrono::milliseconds(10));
     }
 
     
