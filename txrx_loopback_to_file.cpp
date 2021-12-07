@@ -76,9 +76,7 @@ void send_from_file(
     uhd::usrp::multi_usrp::sptr usrp 
     )
 {   
-    
-        uhd::time_spec_t t = usrp->get_time_now();
-        // std::cout << boost::format("tx %f") %  t.get_real_secs() << std::endl;
+
         int a = 1;
        
     do {
@@ -93,14 +91,14 @@ void send_from_file(
         md.end_of_burst   = false;
         std::vector<samp_type> buff(samps_per_buff); 
         
-        // if (a)
-        // {    
-        //     md.start_of_burst = false;
-        //     md.end_of_burst   = false;
-        //     md.has_time_spec = true;
-        //     md.time_spec = uhd::time_spec_t(0.1);
+        if (a)
+        {    
+            md.start_of_burst = false;
+            md.end_of_burst   = false;
+            md.has_time_spec = true;
+            md.time_spec = uhd::time_spec_t(0.1);
             
-        // }
+        }
         
 
 
@@ -112,11 +110,11 @@ void send_from_file(
             md.end_of_burst = infile.eof();
 
             const size_t samples_sent = tx_stream->send(&buff.front(), num_tx_samps, md);
-            // if (a)
-            // {
-            //     md.has_time_spec = false;
-            //     a=0;
-            // }
+            if (a)
+            {
+                md.has_time_spec = false;
+                a=0;
+            }
             
             if (samples_sent != num_tx_samps) {
                 UHD_LOG_ERROR("TX-STREAM",
@@ -133,8 +131,6 @@ void send_from_file(
         // infile.close();
         
     }while(repeat and not stop_signal_called); 
-
-    std::cout << boost::format("tx t: %f") % t.get_full_secs()  << std::endl;
     
 }
 
@@ -180,14 +176,9 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
 
     // setup streaming
     uhd::stream_cmd_t stream_cmd(uhd::stream_cmd_t::STREAM_MODE_START_CONTINUOUS);
-    stream_cmd.stream_now = true;
-    // stream_cmd.time_spec  = uhd::time_spec_t(uhd::time_spec_t(0.9));
+    stream_cmd.stream_now = false;
+    stream_cmd.time_spec  = uhd::time_spec_t(uhd::time_spec_t(0.1));
     rx_stream->issue_stream_cmd(stream_cmd);
-
-    //  uhd::time_spec_t t = usrp->get_time_now();
-    uhd::time_spec_t t  = usrp->get_time_now();
-
-    //rx_stream->issue_stream_cmd(stream_cmd);
 
     while (not stop_signal_called
            and (num_requested_samples > num_total_samps or num_requested_samples == 0)) {
@@ -232,8 +223,6 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
     for (size_t i = 0; i < outfiles.size(); i++) {
         outfiles[i]->close();
     }
-
-    std::cout << boost::format("rx t: %f") % t.get_full_secs()  << std::endl;
 }
 
 
@@ -324,6 +313,40 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     std::cout << boost::format("Creating the receive usrp sub device with: %s... \n") % rx_args
               << std::endl;
     usrp->set_rx_subdev_spec(rx_channels, slave_index);
+
+
+     //starting time synchronisation
+    std::cout << boost::format("\nTime Synchronisation") << std::endl;
+
+    std::cout << boost::format("Configuring UHD - %f - as slave") % slave_index
+              << std::endl;
+
+    usrp->set_clock_source("internal", master_index);
+     usrp->set_time_now(uhd::time_spec_t(0.0), 0); // Time zero for MB0
+    //should automatically sync with master after this line   
+    usrp->set_time_source("mimo", slave_index);
+    usrp->set_clock_source("mimo", slave_index);
+
+    std::this_thread::sleep_for (std::chrono::milliseconds(50));
+    
+    //checking if clock/time sources have been set correctly
+    std::cout << boost::format("Master clock source: %s") %usrp->get_clock_source(master_index)
+              << std::endl;
+    std::cout << boost::format("Slave clock source: %s") %usrp->get_clock_source(slave_index)
+              << std::endl;
+    std::cout << boost::format("Master time source: %s") %usrp->get_time_source(master_index)
+    << std::endl;
+    std::cout << boost::format("Slave time source: %s") %usrp->get_time_source(slave_index)
+              << std::endl;
+    std::cout << boost::format("\n")
+               << std::endl;
+
+    std::cout << boost::format("Channel: Usrp number ")
+               << std::endl;
+
+    std::cout << boost::format("Using Devices: %s") % usrp->get_pp_string()
+               << std::endl;
+
 
     /****************************
     * Sample Params
@@ -489,39 +512,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     * Comms/Timing Params
     *****************************/
 
-    //starting time synchronisation
-    std::cout << boost::format("\nTime Synchronisation") << std::endl;
-
-    std::cout << boost::format("Configuring UHD - %f - as slave") % slave_index
-              << std::endl;
-
-    usrp->set_clock_source("internal", master_index);
-     usrp->set_time_now(uhd::time_spec_t(0.0), 0); // Time zero for MB0
-    //should automatically sync with master after this line   
-    usrp->set_time_source("mimo", slave_index);
-    usrp->set_clock_source("mimo", slave_index);
-
-    std::this_thread::sleep_for (std::chrono::milliseconds(50));
-    
-    //checking if clock/time sources have been set correctly
-    std::cout << boost::format("Master clock source: %s") %usrp->get_clock_source(master_index)
-              << std::endl;
-    std::cout << boost::format("Slave clock source: %s") %usrp->get_clock_source(slave_index)
-              << std::endl;
-    std::cout << boost::format("Master time source: %s") %usrp->get_time_source(master_index)
-    << std::endl;
-    std::cout << boost::format("Slave time source: %s") %usrp->get_time_source(slave_index)
-              << std::endl;
-    std::cout << boost::format("\n")
-               << std::endl;
-
-    std::cout << boost::format("Channel: Usrp number ")
-               << std::endl;
-
-    std::cout << boost::format("Using Devices: %s") % usrp->get_pp_string()
-               << std::endl;
-
-
     //This check is an abriged version found in other standard files
     tx_sensor_names = usrp->get_mboard_sensor_names(master_index);
      if (1)
@@ -586,26 +576,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     // start transmit worker thread
     boost::thread_group transmit_thread;
 
-
-    //RX
-
-    if (type == "double")
-        recv_to_file<std::complex<double>>(
-            usrp, rx_stream,file_rx, spb, total_num_samps, settling, rx_channel_nums);
-    else if (type == "float")
-        recv_to_file<std::complex<float>>(
-            usrp,rx_stream, file_rx, spb, total_num_samps, settling, rx_channel_nums);
-    else if (type == "short")
-        recv_to_file<std::complex<short>>(
-            usrp, rx_stream, file_rx, spb, total_num_samps, settling, rx_channel_nums);
-    else {
-        // clean up transmit worker
-        stop_signal_called = true;
-        transmit_thread.join_all();
-        throw std::runtime_error("Unknown type " + type);
-    }
-
-
     //TX 
 
    
@@ -624,7 +594,24 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     else
         throw std::runtime_error("Unknown type " + type);
 
-    
+
+    //RX
+
+    if (type == "double")
+        recv_to_file<std::complex<double>>(
+            usrp, rx_stream,file_rx, spb, total_num_samps, settling, rx_channel_nums);
+    else if (type == "float")
+        recv_to_file<std::complex<float>>(
+            usrp,rx_stream, file_rx, spb, total_num_samps, settling, rx_channel_nums);
+    else if (type == "short")
+        recv_to_file<std::complex<short>>(
+            usrp, rx_stream, file_rx, spb, total_num_samps, settling, rx_channel_nums);
+    else {
+        // clean up transmit worker
+        stop_signal_called = true;
+        transmit_thread.join_all();
+        throw std::runtime_error("Unknown type " + type);
+    }
 
     while (not stop_signal_called) {
         
