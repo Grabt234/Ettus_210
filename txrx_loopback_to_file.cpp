@@ -71,17 +71,15 @@ void send_from_file(
     uhd::tx_streamer::sptr tx_stream,
     const std::string& file, 
     size_t samps_per_buff,
-    bool repeat,
-    uhd::usrp::multi_usrp::sptr usrp 
+    bool repeat
     )
 {   
 
-        int a = 1;
+        bool wait = true;
 
     do {
         
         // loop until the entire file has been read
-
         //std::cout << boost::format("Reading from file : %s...") %file << std::endl;
         std::ifstream infile(file.c_str(), std::ifstream::binary);
         
@@ -90,9 +88,10 @@ void send_from_file(
         md.end_of_burst   = false;
         std::vector<samp_type> buff(samps_per_buff); 
         
-        if (a)
+        if (wait)
         {    
-    
+            //on first run the tx command only starts at 0.2
+            //afterwards set to zero and continuously reads
             md.has_time_spec = true;
             md.time_spec = uhd::time_spec_t(0.2);
             
@@ -106,10 +105,10 @@ void send_from_file(
             md.end_of_burst = infile.eof();
 
             const size_t samples_sent = tx_stream->send(&buff.front(), num_tx_samps, md, 0.5);
-            if (a)
+            if (wait)
             {
                 //md.has_time_spec = false;
-                a=0;
+                wait=false;
             }
             
             if (samples_sent != num_tx_samps) {
@@ -123,8 +122,7 @@ void send_from_file(
         //moving back to start of file instead of closing
         infile.clear();
         infile.seekg(0);
-
-        // infile.close();
+        // infile.close(); //code kept as reference
         
     }while(repeat and not stop_signal_called); 
     
@@ -228,7 +226,7 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
 int UHD_SAFE_MAIN(int argc, char* argv[])
 {
     // transmit variables to be set by po
-    std::string tx_args, wave_type, tx_ant, tx_subdev, otw, tx_channels;
+    std::string tx_args, tx_ant, tx_subdev, otw, tx_channels;
     double tx_rate, tx_freq, tx_gain, wave_freq, tx_bw;
     float ampl;
 
@@ -264,7 +262,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("rx-subdev", po::value<std::string>(&rx_subdev), "receive subdevice specification")
         ("tx-bw", po::value<double>(&tx_bw), "analog transmit filter bandwidth in Hz")
         ("rx-bw", po::value<double>(&rx_bw), "analog receive filter bandwidth in Hz")
-        ("wave-type", po::value<std::string>(&wave_type)->default_value("CONST"), "waveform type (CONST, SQUARE, RAMP, SINE) - file-tx takes precedence")
         ("wave-freq", po::value<double>(&wave_freq)->default_value(0), "waveform frequency in Hz")
         ("otw", po::value<std::string>(&otw)->default_value("sc16"), "specify the over-the-wire sample mode(sc8 or sc16)")
         ("tx-channels", po::value<std::string>(&tx_channels)->default_value("0"), "which TX channel(s) to use (specify \"A:0\" only")
@@ -287,10 +284,15 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
 
     bool repeat = vm.count("repeat") > 0;
 
+
+
+     /****************************
+    * Initiate MIMMO
+    *****************************/
+
     //selecting which board in slave
     size_t master_index = 0;
     size_t slave_index = 1;
-
 
     uhd::device_addr_t dev_addr;
 
@@ -309,7 +311,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     std::cout << boost::format("Creating the receive usrp sub device with: %s... \n") % rx_args
               << std::endl;
     usrp->set_rx_subdev_spec(rx_channels, slave_index);
-
 
      //starting time synchronisation
     std::cout << boost::format("\nTime Synchronisation") << std::endl;
@@ -344,52 +345,35 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
                << std::endl;
 
 
-    /****************************
-    * Sample Params
-    *****************************/
-
-    std::cerr << "Rates common across all TX channels and RX channels (but not the necessarily the same between TX and RX) \n"
-                  << std::endl;
-
-    // set the transmit sample rate
-    if (not vm.count("tx-rate")) {
-        std::cerr << "Please specify the transmit sample rate with --tx-rate"
-                  << std::endl;
-        return ~0;
-    }
-    std::cout << boost::format("Setting TX Rate: %f Msps...") % (tx_rate / 1e6)
-              << std::endl;
-    usrp->set_tx_rate(tx_rate,0);
-    std::cout << boost::format("Actual TX Rate: %f Msps...")
-                     % (usrp->get_tx_rate() / 1e6)
-              << std::endl
-              << std::endl;
-
-    // set the receive sample rate
-    if (not vm.count("rx-rate")) {
-        std::cerr << "Please specify the sample rate with --rx-rate" << std::endl;
-        return ~0;
-    }
-    std::cout << boost::format("Setting RX Rate: %f Msps...") % (rx_rate / 1e6)
-              << std::endl;
-    usrp->set_rx_rate(rx_rate,0);
-    std::cout << boost::format("Actual RX Rate: %f Msps...")
-                     % (usrp->get_rx_rate(0) / 1e6)
-              << std::endl
-              << std::endl;
-
      /****************************
     * TX Params
     *****************************/
 
-    // set the transmit center frequency
-    if (not vm.count("tx-freq")) {
-        std::cerr << "Please specify the transmit center frequency with --tx-freq"
-                  << std::endl;
-        return ~0;
-    }
+        std::cerr << "Rates common across all TX channels and RX channels (but not the necessarily the same between TX and RX) \n"
+                    << std::endl;
 
-    //Tx channel Config
+        // set the transmit sample rate
+        if (not vm.count("tx-rate")) {
+            std::cerr << "Please specify the transmit sample rate with --tx-rate"
+                    << std::endl;
+            return ~0;
+        }
+        std::cout << boost::format("Setting TX Rate: %f Msps...") % (tx_rate / 1e6)
+                << std::endl;
+        usrp->set_tx_rate(tx_rate,0);
+        std::cout << boost::format("Actual TX Rate: %f Msps...")
+                        % (usrp->get_tx_rate() / 1e6)
+                << std::endl
+                << std::endl;
+
+        // set the transmit center frequency
+        if (not vm.count("tx-freq")) {
+            std::cerr << "Please specify the transmit center frequency with --tx-freq"
+                    << std::endl;
+            return ~0;
+        }
+
+        //Tx channel Config
         std::cout << "Configuring TX Channel " << tx_channels << std::endl;
         
         std::cout << boost::format("Setting TX Freq: %f MHz...") % (tx_freq / 1e6)
@@ -433,6 +417,20 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     /****************************
     * RX Params
     *****************************/
+
+
+        // set the receive sample rate
+        if (not vm.count("rx-rate")) {
+            std::cerr << "Please specify the sample rate with --rx-rate" << std::endl;
+            return ~0;
+        }
+        std::cout << boost::format("Setting RX Rate: %f Msps...") % (rx_rate / 1e6)
+                << std::endl;
+        usrp->set_rx_rate(rx_rate,0);
+        std::cout << boost::format("Actual RX Rate: %f Msps...")
+                        % (usrp->get_rx_rate(0) / 1e6)
+                << std::endl
+                << std::endl;
 
         // set the receive center frequency
         if (not vm.count("rx-freq")) {
@@ -546,6 +544,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     else if (type == "short")
         cpu_format = "sc16";
 
+    //Tx and Rx streamer args
     uhd::stream_args_t tx_stream_args(cpu_format, otw);
     uhd::stream_args_t rx_stream_args(cpu_format, otw);
 
@@ -554,7 +553,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     rx_channel_nums.push_back(0);
     rx_stream_args.channels = rx_channel_nums;
     
-
+    //setting streamer args
     uhd::tx_streamer::sptr tx_stream = usrp->get_tx_stream(tx_stream_args);
     uhd::rx_streamer::sptr rx_stream = usrp->get_rx_stream(rx_stream_args);
 
@@ -564,33 +563,33 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         spb = tx_stream->get_max_num_samps() * 10;
 
 
-     // send from file
-    // start transmit worker thread
+    //send from file
+    //start transmit worker thread
     boost::thread_group transmit_thread;
     boost::thread_group receive_thread;
 
-    // reset usrp time to prepare for transmit/receive
+    //reset usrp time to prepare for transmit/receive
     std::cout << boost::format("Setting device timestamp to 0...") << std::endl;
     usrp->set_time_now(uhd::time_spec_t(0.0));
 
-    //TX 
+    //set TX Thread
     if (type == "double"){
         transmit_thread.create_thread(std::bind(
-        &send_from_file<std::complex<double>>, tx_stream,file_tx,spb, repeat,usrp));
+        &send_from_file<std::complex<double>>, tx_stream,file_tx,spb, repeat));
     }
     else if (type == "float"){
         transmit_thread.create_thread(std::bind(
-        &send_from_file<std::complex<float>>, tx_stream,file_tx,spb,repeat,usrp));
+        &send_from_file<std::complex<float>>, tx_stream,file_tx,spb,repeat));
     }
     else if (type == "short"){
         transmit_thread.create_thread(std::bind(
-        &send_from_file<std::complex<short>>, tx_stream, file_tx,spb,repeat,usrp));
+        &send_from_file<std::complex<short>>, tx_stream, file_tx,spb,repeat));
     }
     else
         throw std::runtime_error("Unknown type " + type);
 
 
-    //RX
+    //set Rx Thread
     if (type == "double")
         receive_thread.create_thread(std::bind(&recv_to_file<std::complex<double>>,
             usrp, rx_stream,file_rx, spb, total_num_samps, settling, rx_channel_nums));
@@ -614,6 +613,10 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     }
 
     
+    /****************************
+    * End Threads
+    *****************************/
+
     // clean up transmit worker
     stop_signal_called = true;
     transmit_thread.join_all();
