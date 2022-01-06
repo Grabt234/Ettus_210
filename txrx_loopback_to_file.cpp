@@ -265,7 +265,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("wave-freq", po::value<double>(&wave_freq)->default_value(0), "waveform frequency in Hz")
         ("otw", po::value<std::string>(&otw)->default_value("sc16"), "specify the over-the-wire sample mode(sc8 or sc16)")
         ("tx-channels", po::value<std::string>(&tx_channels)->default_value("0"), "which TX channel(s) to use (specify \"A:0\" only")
-        ("rx-channels", po::value<std::string>(&rx_channels)->default_value("0"), "which RX channel(s) to use (specify \"B:0\" only")
+        ("rx-channels", po::value<std::string>(&rx_channels)->default_value("1"), "which RX channel(s) to use (specify \"B:0\" only")
         ("tx-int-n", "tune USRP TX with integer-N tuning")
         ("rx-int-n", "tune USRP RX with integer-N tuning")
         ("repeat", "repeatedly transmit file")
@@ -426,9 +426,9 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         }
         std::cout << boost::format("Setting RX Rate: %f Msps...") % (rx_rate / 1e6)
                 << std::endl;
-        usrp->set_rx_rate(rx_rate,0);
+        usrp->set_rx_rate(rx_rate,1);
         std::cout << boost::format("Actual RX Rate: %f Msps...")
-                        % (usrp->get_rx_rate(0) / 1e6)
+                        % (usrp->get_rx_rate(1) / 1e6)
                 << std::endl
                 << std::endl;
 
@@ -443,9 +443,9 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         uhd::tune_request_t rx_tune_request(rx_freq);
         if (vm.count("rx-int-n"))
             rx_tune_request.args = uhd::device_addr_t("mode_n=integer");
-        usrp->set_rx_freq(rx_tune_request, 0);
+        usrp->set_rx_freq(rx_tune_request, 1);
         std::cout << boost::format("Actual RX Freq: %f MHz...")
-                         % (usrp->get_rx_freq(0) / 1e6)
+                         % (usrp->get_rx_freq(1) / 1e6)
                   << std::endl
                   << std::endl;
 
@@ -453,9 +453,9 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         if (vm.count("rx-gain")) {
             std::cout << boost::format("Setting RX Gain: %f dB...") % rx_gain
                       << std::endl;
-            usrp->set_rx_gain(rx_gain, 0);
+            usrp->set_rx_gain(rx_gain, 1);
             std::cout << boost::format("Actual RX Gain: %f dB...")
-                             % usrp->get_rx_gain(0)
+                             % usrp->get_rx_gain(1)
                       << std::endl
                       << std::endl;
         }
@@ -464,16 +464,16 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         if (vm.count("rx-bw")) {
             std::cout << boost::format("Setting RX Bandwidth: %f MHz...") % (rx_bw / 1e6)
                       << std::endl;
-            usrp->set_rx_bandwidth(rx_bw, 0);
+            usrp->set_rx_bandwidth(rx_bw, 1);
             std::cout << boost::format("Actual RX Bandwidth: %f MHz...")
-                             % (usrp->get_rx_bandwidth(0) / 1e6)
+                             % (usrp->get_rx_bandwidth(1) / 1e6)
                       << std::endl
                       << std::endl;
         }
 
         // set the receive antenna
         if (vm.count("rx-ant"))
-            usrp->set_rx_antenna(rx_ant, 0);
+            usrp->set_rx_antenna(rx_ant, 1);
     
 
     /****************************
