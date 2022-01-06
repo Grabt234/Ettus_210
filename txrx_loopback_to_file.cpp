@@ -306,11 +306,11 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     std::cout << std::endl;
     std::cout << boost::format("Creating the transmit usrp sub device with: %s...") % tx_args
               << std::endl;
-    usrp->set_tx_subdev_spec(uhd::usrp::subdev_spec_t("A:A"), master_index);
+    usrp->set_tx_subdev_spec(uhd::usrp::subdev_spec_t("A:0"), master_index);
     std::cout << std::endl;
     std::cout << boost::format("Creating the receive usrp sub device with: %s... \n") % rx_args
               << std::endl;
-    usrp->set_rx_subdev_spec(uhd::usrp::subdev_spec_t("A:B"), slave_index);
+    usrp->set_rx_subdev_spec(uhd::usrp::subdev_spec_t("A:0"), slave_index);
 
      //starting time synchronisation
     std::cout << boost::format("\nTime Synchronisation") << std::endl;
@@ -550,7 +550,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
 
     //rx recieve chanels
     std::vector<size_t> rx_channel_nums;
-    rx_channel_nums.push_back(0);
+    rx_channel_nums.push_back(1);
     rx_stream_args.channels = rx_channel_nums;
     
     //setting streamer args
