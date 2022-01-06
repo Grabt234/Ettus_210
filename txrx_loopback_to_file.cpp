@@ -496,7 +496,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     rx_sensor_names = usrp->get_rx_sensor_names(0);
     if (std::find(rx_sensor_names.begin(), rx_sensor_names.end(), "lo_locked")
         != rx_sensor_names.end()) {
-        uhd::sensor_value_t lo_locked = usrp->get_rx_sensor("lo_locked", 0);
+        uhd::sensor_value_t lo_locked = usrp->get_rx_sensor("lo_locked", 1);
         std::cout << boost::format("Checking RX: %s ...") % lo_locked.to_pp_string()
                   << std::endl;
         UHD_ASSERT_THROW(lo_locked.to_bool());
