@@ -306,11 +306,11 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     std::cout << std::endl;
     std::cout << boost::format("Creating the transmit usrp sub device with: %s...") % tx_args
               << std::endl;
-    usrp->set_tx_subdev_spec(tx_channels, master_index);
+    usrp->set_tx_subdev_spec(uhd::usrp::subdev_spec_t("A:0"), master_index);
     std::cout << std::endl;
     std::cout << boost::format("Creating the receive usrp sub device with: %s... \n") % rx_args
               << std::endl;
-    usrp->set_rx_subdev_spec(rx_channels, slave_index);
+    usrp->set_rx_subdev_spec(uhd::usrp::subdev_spec_t("A:0"), slave_index);
 
      //starting time synchronisation
     std::cout << boost::format("\nTime Synchronisation") << std::endl;
