@@ -420,7 +420,9 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     /****************************
     * RX Params
     *****************************/
-
+    
+    for (size_t i = 0; i <= 1 ; i++)
+    {
         std::cout << boost::format("Setting RX Rate Chanel %f") % (1)
                 << std::endl;
 
@@ -431,7 +433,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         }
         std::cout << boost::format("Setting RX Rate: %f Msps...") % (rx_rate / 1e6)
                 << std::endl;
-        usrp->set_rx_rate(rx_rate);
+        usrp->set_rx_rate(rx_rate,i);
         std::cout << boost::format("Actual RX Rate: %f Msps...")
                         % (usrp->get_rx_rate(1) / 1e6)
                 << std::endl
@@ -448,7 +450,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         uhd::tune_request_t rx_tune_request(rx_freq);
         if (vm.count("rx-int-n"))
             rx_tune_request.args = uhd::device_addr_t("mode_n=integer");
-        usrp->set_rx_freq(rx_tune_request);
+        usrp->set_rx_freq(rx_tune_request,i);
         std::cout << boost::format("Actual RX Freq: %f MHz...")
                          % (usrp->get_rx_freq(1) / 1e6)
                   << std::endl
@@ -458,7 +460,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         if (vm.count("rx-gain")) {
             std::cout << boost::format("Setting RX Gain: %f dB...") % rx_gain
                       << std::endl;
-            usrp->set_rx_gain(rx_gain);
+            usrp->set_rx_gain(rx_gain,i);
             std::cout << boost::format("Actual RX Gain: %f dB...")
                              % usrp->get_rx_gain(1)
                       << std::endl
@@ -469,12 +471,15 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         if (vm.count("rx-bw")) {
             std::cout << boost::format("Setting RX Bandwidth: %f MHz...") % (rx_bw / 1e6)
                       << std::endl;
-            usrp->set_rx_bandwidth(rx_bw);
+            usrp->set_rx_bandwidth(rx_bw,i);
             std::cout << boost::format("Actual RX Bandwidth: %f MHz...")
                              % (usrp->get_rx_bandwidth(1) / 1e6)
                       << std::endl
                       << std::endl;
         }
+    }
+    
+        
 
         //AUTOMATE LATER
         // set the receive antenna
