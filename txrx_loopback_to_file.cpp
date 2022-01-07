@@ -245,6 +245,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("rx-args", po::value<std::string>(&rx_args)->default_value(""), "uhd receive device address args")
         ("file-tx", po::value<std::string>(&file_tx), "name of the file to read binary samples from")
         ("file-write", po::value<std::string>(&file_rx)->default_value("rx.dat"), "name of the file to write binary to")
+        ("file-write", po::value<std::string>(&file_rx2)->default_value("rx2.dat"), "name of the file to write binary to")
         ("type", po::value<std::string>(&type)->default_value("short"), "sample type in file: double, float, or short")
         ("nsamps", po::value<size_t>(&total_num_samps)->default_value(0), "total number of samples to receive")
         ("settling", po::value<double>(&settling)->default_value(double(0.2)), "settling time (seconds) before receiving")
@@ -310,7 +311,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     std::cout << std::endl;
     std::cout << boost::format("Creating the receive usrp sub device with: %s... \n") % rx_args
               << std::endl;
-    usrp->set_rx_subdev_spec(uhd::usrp::subdev_spec_t("A:0"), slave_index);
+    usrp->set_rx_subdev_spec(uhd::usrp::subdev_spec_t("A:0"), slave_index); //seting daughter on ettus board 2 at rx
 
      //starting time synchronisation
     std::cout << boost::format("\nTime Synchronisation") << std::endl;
@@ -418,9 +419,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     * RX Params
     *****************************/
 
-    for (size_t i = 1; i <= 2; i++)
-    {
-        std::cout << boost::format("Setting RX Rate Chanel") % (i)
+        std::cout << boost::format("Setting RX Rate Chanel %f") % (1)
                 << std::endl;
 
         // set the receive sample rate
@@ -430,9 +429,9 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         }
         std::cout << boost::format("Setting RX Rate: %f Msps...") % (rx_rate / 1e6)
                 << std::endl;
-        usrp->set_rx_rate(rx_rate,i);
+        usrp->set_rx_rate(rx_rate);
         std::cout << boost::format("Actual RX Rate: %f Msps...")
-                        % (usrp->get_rx_rate(i) / 1e6)
+                        % (usrp->get_rx_rate(1) / 1e6)
                 << std::endl
                 << std::endl;
 
@@ -447,9 +446,9 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         uhd::tune_request_t rx_tune_request(rx_freq);
         if (vm.count("rx-int-n"))
             rx_tune_request.args = uhd::device_addr_t("mode_n=integer");
-        usrp->set_rx_freq(rx_tune_request, i);
+        usrp->set_rx_freq(rx_tune_request);
         std::cout << boost::format("Actual RX Freq: %f MHz...")
-                         % (usrp->get_rx_freq(i) / 1e6)
+                         % (usrp->get_rx_freq(1) / 1e6)
                   << std::endl
                   << std::endl;
 
@@ -457,9 +456,9 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         if (vm.count("rx-gain")) {
             std::cout << boost::format("Setting RX Gain: %f dB...") % rx_gain
                       << std::endl;
-            usrp->set_rx_gain(rx_gain, i);
+            usrp->set_rx_gain(rx_gain);
             std::cout << boost::format("Actual RX Gain: %f dB...")
-                             % usrp->get_rx_gain(i)
+                             % usrp->get_rx_gain(1)
                       << std::endl
                       << std::endl;
         }
@@ -468,9 +467,9 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         if (vm.count("rx-bw")) {
             std::cout << boost::format("Setting RX Bandwidth: %f MHz...") % (rx_bw / 1e6)
                       << std::endl;
-            usrp->set_rx_bandwidth(rx_bw, i);
+            usrp->set_rx_bandwidth(rx_bw);
             std::cout << boost::format("Actual RX Bandwidth: %f MHz...")
-                             % (usrp->get_rx_bandwidth(i) / 1e6)
+                             % (usrp->get_rx_bandwidth(1) / 1e6)
                       << std::endl
                       << std::endl;
         }
@@ -502,7 +501,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         UHD_ASSERT_THROW(lo_locked.to_bool());
      }
 
-     for (size_t i = 1; i <= 2; i++)
+     for (size_t i = 0; i <= 1; i++)
      {
          rx_sensor_names = usrp->get_rx_sensor_names(i);
         if (std::find(rx_sensor_names.begin(), rx_sensor_names.end(), "lo_locked")
@@ -563,18 +562,16 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     uhd::stream_args_t rx_stream_args_2(cpu_format, otw);
 
     //rx recieve chanels
-    std::vector<size_t> rx_channel_nums_1;
-    rx_channel_nums_1.push_back(1);
-    rx_stream_args_1.channels = rx_channel_nums_1;
+    std::vector<size_t> rx_channel_nums;
+    rx_channel_nums.push_back(1);
+    rx_channel_nums.push_back(2);
+    rx_stream_args.channels = rx_channel_nums;
     
-    std::vector<size_t> rx_channel_nums_2;
-    rx_channel_nums_1.push_back(2);
-    rx_stream_args_2.channels = rx_channel_nums_2;
 
     //setting streamer args
     uhd::tx_streamer::sptr tx_stream = usrp->get_tx_stream(tx_stream_args);
-    uhd::rx_streamer::sptr rx_stream_1 = usrp->get_rx_stream(rx_stream_args_1);
-    uhd::rx_streamer::sptr rx_stream_2 = usrp->get_rx_stream(rx_stream_args_2);
+    uhd::rx_streamer::sptr rx_stream = usrp->get_rx_stream(rx_stream_args);
+
 
 
     // allocate a buffer which we re-use for each channel
@@ -611,13 +608,13 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     //set Rx Thread 1
     if (type == "double")
         receive_thread.create_thread(std::bind(&recv_to_file<std::complex<double>>,
-            usrp, rx_stream_1,file_rx, spb, total_num_samps, settling, rx_channel_nums_1));
+            usrp, rx_stream(1),file_rx, spb, total_num_samps, settling, rx_channel_nums_1));
     else if (type == "float")
         receive_thread.create_thread(std::bind(&recv_to_file<std::complex<float>>,
-            usrp, rx_stream_1,file_rx, spb, total_num_samps, settling, rx_channel_nums_1));
+            usrp, rx_stream(1),file_rx, spb, total_num_samps, settling, rx_channel_nums_1));
     else if (type == "short")
         receive_thread.create_thread(std::bind(&recv_to_file<std::complex<short>>,
-            usrp, rx_stream_1,file_rx, spb, total_num_samps, settling, rx_channel_nums_1));
+            usrp, rx_stream(1),file_rx, spb, total_num_samps, settling, rx_channel_nums_1));
     else {
         // clean up transmit worker
         stop_signal_called = true;
@@ -629,13 +626,13 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     //set Rx Thread 2
     if (type == "double")
         receive_thread.create_thread(std::bind(&recv_to_file<std::complex<double>>,
-            usrp, rx_stream_2,std::string("Fb"), spb, total_num_samps, settling, rx_channel_nums_2));
+            usrp, rx_stream(2),file_rx2, spb, total_num_samps, settling, rx_channel_nums_2));
     else if (type == "float")
         receive_thread.create_thread(std::bind(&recv_to_file<std::complex<float>>,
-            usrp, rx_stream_2,std::string("Fb"), spb, total_num_samps, settling, rx_channel_nums_2));
+            usrp, rx_stream(2),file_rx2, spb, total_num_samps, settling, rx_channel_nums_2));
     else if (type == "short")
         receive_thread.create_thread(std::bind(&recv_to_file<std::complex<short>>,
-            usrp, rx_stream_2,std::string("Fb"), spb, total_num_samps, settling, rx_channel_nums_2));
+            usrp, rx_stream(2),file_rx2, spb, total_num_samps, settling, rx_channel_nums_2));
     else {
         // clean up transmit worker
         stop_signal_called = true;
