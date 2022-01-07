@@ -135,7 +135,7 @@ void send_from_file(
 template <typename samp_type>
 void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
     uhd::rx_streamer::sptr rx_stream,
-    const std::string& file,
+    const std::vector<std::string>& files,
     size_t samps_per_buff,
     int num_requested_samples,
     double settling_time,
@@ -158,7 +158,7 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
     // (use shared_ptr because ofstream is non-copyable)
     std::vector<std::shared_ptr<std::ofstream>> outfiles;
     for (size_t i = 0; i < buffs.size(); i++) {
-        const std::string this_filename = generate_out_filename(file, buffs.size(), i);
+        const std::string this_filename = generate_out_filename(files[i], buffs.size(), i);
         outfiles.push_back(std::shared_ptr<std::ofstream>(
             new std::ofstream(this_filename.c_str(), std::ofstream::binary)));
     }
@@ -176,6 +176,7 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
 
     while (not stop_signal_called
            and (num_requested_samples > num_total_samps or num_requested_samples == 0)) {
+        // receiving from all channels (i think)
         size_t num_rx_samps = rx_stream->recv(buff_ptrs, samps_per_buff, md, timeout);
         timeout             = 0.1f; // small timeout for subsequent recv
         if (md.error_code == uhd::rx_metadata_t::ERROR_CODE_TIMEOUT) {
@@ -231,7 +232,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     float ampl;
 
     // receive variables to be set by po
-    std::string rx_args, file_rx, file_tx, type, rx_ant, rx_subdev, rx_channels;
+    std::string rx_args, file_rx,file_rx2, file_tx, type, rx_ant, rx_subdev, rx_channels;
     size_t total_num_samps, spb;
     double rx_rate, rx_freq, rx_gain, rx_bw;
     double settling;
@@ -311,7 +312,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     std::cout << std::endl;
     std::cout << boost::format("Creating the receive usrp sub device with: %s... \n") % rx_args
               << std::endl;
-    usrp->set_rx_subdev_spec(uhd::usrp::subdev_spec_t("A:0"), slave_index); //seting daughter on ettus board 2 at rx
+    usrp->set_rx_subdev_spec(uhd::usrp::subdev_spec_t("A:0"), slave_index);
 
      //starting time synchronisation
     std::cout << boost::format("\nTime Synchronisation") << std::endl;
@@ -478,7 +479,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         // set the receive antenna
         // if (vm.count("rx-ant"))
         //     usrp->set_rx_antenna(rx_ant, i);
-    }
+
     
     usrp->set_rx_antenna(std::string("TX/RX"), 1);
     usrp->set_rx_antenna(std::string("RX2"), 2);
@@ -558,8 +559,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
 
     //Tx and Rx streamer args
     uhd::stream_args_t tx_stream_args(cpu_format, otw);
-    uhd::stream_args_t rx_stream_args_1(cpu_format, otw);
-    uhd::stream_args_t rx_stream_args_2(cpu_format, otw);
+    uhd::stream_args_t rx_stream_args(cpu_format, otw);
 
     //rx recieve chanels
     std::vector<size_t> rx_channel_nums;
@@ -568,10 +568,10 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     rx_stream_args.channels = rx_channel_nums;
     
 
+
     //setting streamer args
     uhd::tx_streamer::sptr tx_stream = usrp->get_tx_stream(tx_stream_args);
     uhd::rx_streamer::sptr rx_stream = usrp->get_rx_stream(rx_stream_args);
-
 
 
     // allocate a buffer which we re-use for each channel
@@ -605,34 +605,20 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         throw std::runtime_error("Unknown type " + type);
 
 
+    std::vector<std::string> files;
+    files.push_back(file_rx);
+    files.push_back(file_rx2);
+
     //set Rx Thread 1
     if (type == "double")
         receive_thread.create_thread(std::bind(&recv_to_file<std::complex<double>>,
-            usrp, rx_stream(1),file_rx, spb, total_num_samps, settling, rx_channel_nums_1));
+            usrp, rx_stream,files, spb, total_num_samps, settling, rx_channel_nums));
     else if (type == "float")
         receive_thread.create_thread(std::bind(&recv_to_file<std::complex<float>>,
-            usrp, rx_stream(1),file_rx, spb, total_num_samps, settling, rx_channel_nums_1));
+            usrp, rx_stream,files, spb, total_num_samps, settling, rx_channel_nums));
     else if (type == "short")
         receive_thread.create_thread(std::bind(&recv_to_file<std::complex<short>>,
-            usrp, rx_stream(1),file_rx, spb, total_num_samps, settling, rx_channel_nums_1));
-    else {
-        // clean up transmit worker
-        stop_signal_called = true;
-        transmit_thread.join_all();
-        receive_thread.join_all();
-        throw std::runtime_error("Unknown type " + type);
-    }
-
-    //set Rx Thread 2
-    if (type == "double")
-        receive_thread.create_thread(std::bind(&recv_to_file<std::complex<double>>,
-            usrp, rx_stream(2),file_rx2, spb, total_num_samps, settling, rx_channel_nums_2));
-    else if (type == "float")
-        receive_thread.create_thread(std::bind(&recv_to_file<std::complex<float>>,
-            usrp, rx_stream(2),file_rx2, spb, total_num_samps, settling, rx_channel_nums_2));
-    else if (type == "short")
-        receive_thread.create_thread(std::bind(&recv_to_file<std::complex<short>>,
-            usrp, rx_stream(2),file_rx2, spb, total_num_samps, settling, rx_channel_nums_2));
+            usrp, rx_stream,files, spb, total_num_samps, settling, rx_channel_nums));
     else {
         // clean up transmit worker
         stop_signal_called = true;
