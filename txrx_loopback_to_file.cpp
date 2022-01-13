@@ -321,11 +321,11 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     std::cout << boost::format("Configuring UHD - %f - as slave") % slave_index
               << std::endl;
 
-    usrp->set_clock_source("internal", master_index);
+    usrp->set_clock_source("internal", slave_index);
      usrp->set_time_now(uhd::time_spec_t(0.0), 0); // Time zero for MB0
     //should automatically sync with master after this line   
-    usrp->set_time_source("mimo", slave_index);
-    usrp->set_clock_source("mimo", slave_index);
+    usrp->set_time_source("mimo", master_index);
+    usrp->set_clock_source("mimo", master_index);
 
     std::this_thread::sleep_for (std::chrono::milliseconds(50));
     
@@ -421,9 +421,9 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     * RX Params
     *****************************/
     
-    for (size_t i = 0; i <= 1 ; i++)
+    for (size_t i = 1; i <= 1 ; i++)
     {
-        std::cout << boost::format("Setting RX Rate Chanel %f") % (1)
+        std::cout << boost::format("Setting RX Rate Chanel %f") % (i)
                 << std::endl;
 
         // set the receive sample rate
@@ -435,7 +435,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
                 << std::endl;
         usrp->set_rx_rate(rx_rate,i);
         std::cout << boost::format("Actual RX Rate: %f Msps...")
-                        % (usrp->get_rx_rate(1) / 1e6)
+                        % (usrp->get_rx_rate(i) / 1e6)
                 << std::endl
                 << std::endl;
 
@@ -452,7 +452,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
             rx_tune_request.args = uhd::device_addr_t("mode_n=integer");
         usrp->set_rx_freq(rx_tune_request,i);
         std::cout << boost::format("Actual RX Freq: %f MHz...")
-                         % (usrp->get_rx_freq(1) / 1e6)
+                         % (usrp->get_rx_freq(i) / 1e6)
                   << std::endl
                   << std::endl;
 
@@ -462,7 +462,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
                       << std::endl;
             usrp->set_rx_gain(rx_gain,i);
             std::cout << boost::format("Actual RX Gain: %f dB...")
-                             % usrp->get_rx_gain(1)
+                             % usrp->get_rx_gain(i)
                       << std::endl
                       << std::endl;
         }
@@ -473,21 +473,13 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
                       << std::endl;
             usrp->set_rx_bandwidth(rx_bw,i);
             std::cout << boost::format("Actual RX Bandwidth: %f MHz...")
-                             % (usrp->get_rx_bandwidth(1) / 1e6)
+                             % (usrp->get_rx_bandwidth(i) / 1e6)
                       << std::endl
                       << std::endl;
         }
     }
     
-        
-
-        //AUTOMATE LATER
-        // set the receive antenna
-        // if (vm.count("rx-ant"))
-        //     usrp->set_rx_antenna(rx_ant, i);
-
-    
-    usrp->set_rx_antenna(std::string("RX2"), 1);
+    //usrp->set_rx_antenna(std::string("TX/RX"), 1);
     usrp->set_rx_antenna(std::string("RX2"), 0);
 
     /****************************
@@ -520,6 +512,16 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     }
      }
      
+    //we will tune the frontends in 100ms from now
+    // uhd::time_spec_t cmd_time = usrp->get_time_now() + uhd::time_spec_t(0.1);
+    // //sets command time on all devices
+    // //the next commands are all timed
+    // usrp->set_command_time(cmd_time);
+    // //tune channel 0 and channel 1
+    // usrp->set_rx_freq(rx_freq, 0); // Channel 0
+    // usrp->set_rx_freq(rx_freq, 1); // Channel 1
+    // //end timed commands
+    // usrp->clear_command_time();
 
     /****************************
     * Comms/Timing Params
@@ -569,8 +571,8 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
 
     //rx recieve chanels
     std::vector<size_t> rx_channel_nums;
-    rx_channel_nums.push_back(0);
     rx_channel_nums.push_back(1);
+    //rx_channel_nums.push_back(0);
     rx_stream_args.channels = rx_channel_nums;
     
 
@@ -585,6 +587,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         spb = tx_stream->get_max_num_samps() * 10;
 
 
+    
     //send from file
     //start transmit worker thread
     boost::thread_group transmit_thread;
