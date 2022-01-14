@@ -68,15 +68,18 @@ std::string generate_out_filename(
 template <typename samp_type>
 void send_from_file(
     //std::vector<std::complex<samp_type>> buff,
+    uhd::usrp::multi_usrp::sptr usrp,
     uhd::tx_streamer::sptr tx_stream,
     const std::string& file, 
     size_t samps_per_buff,
     bool repeat
     )
 {   
-
-        bool wait = true;
-
+        bool first = true;
+        float delay = 0.001;
+        size_t num_tx_samps;
+        
+        
     do {
         
         // loop until the entire file has been read
@@ -86,29 +89,37 @@ void send_from_file(
         uhd::tx_metadata_t md;
         md.start_of_burst = false;
         md.end_of_burst   = false;
+        //setting transmit command in the future
+        //is the signal delay
+        //allows time to read from file and not have buffers interfere with timing
+        md.time_spec = usrp->get_time_now()+ uhd::time_spec_t(delay);
+        md.has_time_spec = true;
         std::vector<samp_type> buff(samps_per_buff); 
-        
-        if (wait)
+
+        if (first)
         {    
             //on first run the tx command only starts at 0.2
             //afterwards set to zero and continuously reads
+            md.time_spec = usrp->get_time_now();
             md.has_time_spec = true;
-            md.time_spec = uhd::time_spec_t(0.2);
+            md.time_spec = uhd::time_spec_t(0.5);
             
-        }
-        
-        //transmits whole file then exits loop
-        while (not md.end_of_burst and not stop_signal_called) {
             infile.read((char*)&buff.front(), buff.size() * sizeof(samp_type));
-            size_t num_tx_samps = size_t(infile.gcount() / sizeof(samp_type));
+            num_tx_samps = size_t(infile.gcount() / sizeof(samp_type));
 
             md.end_of_burst = infile.eof();
 
-            const size_t samples_sent = tx_stream->send(&buff.front(), num_tx_samps, md, 0.5);
-            if (wait)
+        }
+
+
+        //transmits whole file then exits loop
+        while (not md.end_of_burst and not stop_signal_called) {
+
+            const size_t samples_sent = tx_stream->send(&buff.front(), num_tx_samps, md, 0.6);
+            if (first) 
             {
                 //md.has_time_spec = false;
-                wait=false;
+                first = false;
             }
             
             if (samples_sent != num_tx_samps) {
@@ -117,12 +128,17 @@ void send_from_file(
                                                     << samples_sent << " sent).");
                 return;
             }
+
+            infile.read((char*)&buff.front(), buff.size() * sizeof(samp_type));
+            num_tx_samps = size_t(infile.gcount() / sizeof(samp_type));
+
+            md.end_of_burst = infile.eof();
         }
 
         //moving back to start of file instead of closing
         infile.clear();
         infile.seekg(0);
-        // infile.close(); //code kept as reference
+        //infile.close(); //code kept as reference
         
     }while(repeat and not stop_signal_called); 
     
@@ -145,6 +161,8 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
 
     // Prepare buffers for received samples and metadata
     uhd::rx_metadata_t md;
+    //md.time_spec = usrp->get_time_now();
+
     std::vector<std::vector<samp_type>> buffs(
         rx_channel_nums.size(), std::vector<samp_type>(samps_per_buff));
 
@@ -167,12 +185,12 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
     UHD_ASSERT_THROW(buffs.size() == rx_channel_nums.size());
     bool overflow_message = true;
     double timeout =
-        settling_time + 0.2f; // expected settling time + padding for first recv
+        settling_time + 0.6f; // expected settling time + padding for first recv
 
     // setup streaming
     uhd::stream_cmd_t stream_cmd(uhd::stream_cmd_t::STREAM_MODE_START_CONTINUOUS);
     stream_cmd.stream_now = false;
-    stream_cmd.time_spec  = uhd::time_spec_t(0.2);
+    stream_cmd.time_spec  = uhd::time_spec_t(0.5);
     rx_stream->issue_stream_cmd(stream_cmd);
 
     while (not stop_signal_called
@@ -479,8 +497,8 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         }
     }
     
-    //usrp->set_rx_antenna(std::string("TX/RX"), 1);
-    usrp->set_rx_antenna(std::string("RX2"), 0);
+    usrp->set_rx_antenna(std::string("TX/RX"), 1);
+    //usrp->set_rx_antenna(std::string("RX2"), 0);
 
     /****************************
     * Local Oscillators
@@ -500,7 +518,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         UHD_ASSERT_THROW(lo_locked.to_bool());
      }
 
-     for (size_t i = 0; i <= 1; i++)
+     for (size_t i = 1; i <= 1; i++)
      {
          rx_sensor_names = usrp->get_rx_sensor_names(i);
         if (std::find(rx_sensor_names.begin(), rx_sensor_names.end(), "lo_locked")
@@ -512,17 +530,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     }
      }
      
-    //we will tune the frontends in 100ms from now
-    // uhd::time_spec_t cmd_time = usrp->get_time_now() + uhd::time_spec_t(0.1);
-    // //sets command time on all devices
-    // //the next commands are all timed
-    // usrp->set_command_time(cmd_time);
-    // //tune channel 0 and channel 1
-    // usrp->set_rx_freq(rx_freq, 0); // Channel 0
-    // usrp->set_rx_freq(rx_freq, 1); // Channel 1
-    // //end timed commands
-    // usrp->clear_command_time();
-
     /****************************
     * Comms/Timing Params
     *****************************/
@@ -565,9 +572,12 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     else if (type == "short")
         cpu_format = "sc16";
 
+    std::string rx_type = "double";
+    std::string rx_cpu_format = "fc64";
+
     //Tx and Rx streamer args
     uhd::stream_args_t tx_stream_args(cpu_format, otw);
-    uhd::stream_args_t rx_stream_args(cpu_format, otw);
+    uhd::stream_args_t rx_stream_args(rx_cpu_format, otw);
 
     //rx recieve chanels
     std::vector<size_t> rx_channel_nums;
@@ -575,6 +585,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     //rx_channel_nums.push_back(0);
     rx_stream_args.channels = rx_channel_nums;
     
+    size_t tx_spb = spb;
 
 
     //setting streamer args
@@ -597,31 +608,15 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     std::cout << boost::format("Setting device timestamp to 0...") << std::endl;
     usrp->set_time_now(uhd::time_spec_t(0.0));
 
-    //set TX Thread
-    if (type == "double"){
-        transmit_thread.create_thread(std::bind(
-        &send_from_file<std::complex<double>>, tx_stream,file_tx,spb, repeat));
-    }
-    else if (type == "float"){
-        transmit_thread.create_thread(std::bind(
-        &send_from_file<std::complex<float>>, tx_stream,file_tx,spb,repeat));
-    }
-    else if (type == "short"){
-        transmit_thread.create_thread(std::bind(
-        &send_from_file<std::complex<short>>, tx_stream, file_tx,spb,repeat));
-    }
-    else
-        throw std::runtime_error("Unknown type " + type);
-
 
     //set Rx Thread 1
-    if (type == "double")
+    if (rx_type == "double")
         receive_thread.create_thread(std::bind(&recv_to_file<std::complex<double>>,
             usrp, rx_stream,file_rx, spb, total_num_samps, settling, rx_channel_nums));
-    else if (type == "float")
+    else if (rx_type  == "float")
         receive_thread.create_thread(std::bind(&recv_to_file<std::complex<float>>,
             usrp, rx_stream,file_rx, spb, total_num_samps, settling, rx_channel_nums));
-    else if (type == "short")
+    else if (rx_type == "short")
         receive_thread.create_thread(std::bind(&recv_to_file<std::complex<short>>,
             usrp, rx_stream,file_rx, spb, total_num_samps, settling, rx_channel_nums));
     else {
@@ -632,6 +627,24 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         throw std::runtime_error("Unknown type " + type);
     }
 
+
+    //set TX Thread
+    if (type == "double"){
+        transmit_thread.create_thread(std::bind(
+        &send_from_file<std::complex<double>>, usrp,tx_stream,file_tx,tx_spb, repeat));
+    }
+    else if (type == "float"){
+        transmit_thread.create_thread(std::bind(
+        &send_from_file<std::complex<float>>,usrp, tx_stream,file_tx,tx_spb,repeat));
+    }
+    else if (type == "short"){
+        transmit_thread.create_thread(std::bind(
+        &send_from_file<std::complex<short>>,usrp, tx_stream, file_tx,tx_spb,repeat));
+    }
+    else
+        throw std::runtime_error("Unknown type " + type);
+
+    
     while (not stop_signal_called) {
         
          std::this_thread::sleep_for (std::chrono::milliseconds(1));
