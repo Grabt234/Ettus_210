@@ -76,7 +76,7 @@ void send_from_file(
     )
 {   
         bool first = true;
-        float delay = 0.001;
+        double delay = 0.001;
         size_t num_tx_samps;
         
         
@@ -118,7 +118,6 @@ void send_from_file(
             const size_t samples_sent = tx_stream->send(&buff.front(), num_tx_samps, md, 0.6);
             if (first) 
             {
-                //md.has_time_spec = false;
                 first = false;
             }
             
@@ -557,6 +556,18 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         std::signal(SIGINT, &sig_int_handler);
         std::cout << "Press Ctrl + C to stop streaming..." << std::endl;
     }
+
+
+    //for coherent receival
+    uhd::time_spec_t cmd_time = usrp->get_time_now() + uhd::time_spec_t(0.1);
+    //sets command time on all devices
+    //the next commands are all timed
+    usrp->set_command_time(cmd_time);
+    //tune channel 0 and channel 1
+    usrp->set_tx_freq(tx_freq, 1); // Channel 0
+    usrp->set_rx_freq(rx_freq, 0); // Channel 1
+    //end timed commands
+    usrp->clear_command_time();
   
    /****************************
     * TX/RX Threads
