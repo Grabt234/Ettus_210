@@ -76,7 +76,8 @@ void send_from_file(
     )
 {   
         bool first = true;
-        double delay = 0.001;
+        //this does nothing at the moment. unsure why
+        double delay = 0.2f;
         size_t num_tx_samps;
         
         
@@ -92,8 +93,8 @@ void send_from_file(
         //setting transmit command in the future
         //is the signal delay
         //allows time to read from file and not have buffers interfere with timing
-        md.time_spec = usrp->get_time_now()+ uhd::time_spec_t(delay);
         md.has_time_spec = true;
+        md.time_spec = usrp->get_time_now()+ uhd::time_spec_t(delay);
         std::vector<samp_type> buff(samps_per_buff); 
 
         if (first)
@@ -130,7 +131,7 @@ void send_from_file(
 
             infile.read((char*)&buff.front(), buff.size() * sizeof(samp_type));
             num_tx_samps = size_t(infile.gcount() / sizeof(samp_type));
-
+            md.has_time_spec = false;
             md.end_of_burst = infile.eof();
         }
 
@@ -496,7 +497,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         }
     }
     
-    usrp->set_rx_antenna(std::string("TX/RX"), 1);
+    usrp->set_rx_antenna(std::string("RX2"), 1);
     usrp->set_rx_antenna(std::string("RX2"), 0);
 
     /****************************
@@ -597,6 +598,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     rx_channel_nums.push_back(1);
     rx_stream_args.channels = rx_channel_nums;
     
+    //keep 200
     size_t tx_spb = 200;
 
 
