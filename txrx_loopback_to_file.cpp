@@ -340,7 +340,8 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
               << std::endl;
 
     usrp->set_clock_source("internal", slave_index);
-     usrp->set_time_now(uhd::time_spec_t(0.0), 0); // Time zero for MB0
+
+    usrp->set_time_now(uhd::time_spec_t(0.0), 0); // Time zero for MB0
     //should automatically sync with master after this line   
     usrp->set_time_source("mimo", master_index);
     usrp->set_clock_source("mimo", master_index);
@@ -499,6 +500,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     
     usrp->set_rx_antenna(std::string("RX2"), 1);
     usrp->set_rx_antenna(std::string("RX2"), 0);
+    //TX set by PO
 
     /****************************
     * Local Oscillators
@@ -518,9 +520,9 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         UHD_ASSERT_THROW(lo_locked.to_bool());
      }
 
-     for (size_t i = 1; i <= 1; i++)
+     for (size_t i = 0; i <= 1; i++)
      {
-         rx_sensor_names = usrp->get_rx_sensor_names(i);
+        rx_sensor_names = usrp->get_rx_sensor_names(i);
         if (std::find(rx_sensor_names.begin(), rx_sensor_names.end(), "lo_locked")
         != rx_sensor_names.end()) {
         uhd::sensor_value_t lo_locked = usrp->get_rx_sensor("lo_locked", i);
@@ -566,6 +568,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     usrp->set_command_time(cmd_time);
     //tune channel 0 and channel 1
     usrp->set_tx_freq(tx_freq, 0); // Channel 0
+    usrp->set_rx_freq(rx_freq, 0); // Channel 1
     usrp->set_rx_freq(rx_freq, 1); // Channel 1
     //end timed commands
     usrp->clear_command_time();
